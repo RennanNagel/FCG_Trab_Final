@@ -1,20 +1,41 @@
 #include <cmath>
 #include <cstdio>
-#include <iostream>
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
 #include <glm/gtx/string_cast.hpp>
+#include "glm/ext/vector_float4.hpp"
+#include "glm/geometric.hpp"
+#include "glm/gtx/dual_quaternion.hpp"
 #include "matrices.h"
 
-class SphericCamera {
+class Camera {
+  public:
+  bool              UsePerspectiveProjection;
+  virtual glm::mat4 getMatrixView()                     = 0;
+  virtual glm::mat4 getMatrixProjection()               = 0;
+  virtual float     getTheta()                          = 0;
+  virtual void      setTheta(float theta)               = 0;
+  virtual float     getPhi()                            = 0;
+  virtual void      setPhi(float phi)                   = 0;
+  virtual void      setUsePerspectiveProjection(bool b) = 0;
+  virtual float     getScreenRatio()                    = 0;
+  virtual void      setScreenRatio(float screenRatio)   = 0;
+  virtual void      setDistance(float Distance)         = 0;
+  virtual float     getDistance()                       = 0;
+  virtual void      MoveForward()                       = 0;
+  virtual void      MoveBackward()                      = 0;
+  virtual void      MoveLeft()                          = 0;
+  virtual void      MoveRight()                         = 0;
+  virtual void      MoveUpwards()                       = 0;
+  virtual void      MoveDownwards()                     = 0;
+};
+
+class SphericCamera : public Camera {
   private:
+  float Speed;
   float Theta;    // Ângulo no plano ZX em relação ao eixo Z
   float Phi;      // Ângulo em relação ao eixo Y
   float Distance; // Distância da câmera para a origem
-
-  float PositionX;
-  float PositionY;
-  float PositionZ;
 
   glm::vec4 Position;
   glm::vec4 LookAt;
@@ -27,10 +48,10 @@ class SphericCamera {
   float ScreenRatio;
 
   void updatePosition() {
-    PositionY = Distance * sin(Phi);
-    PositionZ = Distance * cos(Phi) * cos(Theta);
-    PositionX = Distance * cos(Phi) * sin(Theta);
-    Position  = glm::vec4(PositionX, PositionY, PositionZ, 1.0f);
+    Position.y = Distance * sin(Phi);
+    Position.z = Distance * cos(Phi) * cos(Theta);
+    Position.x = Distance * cos(Phi) * sin(Theta);
+    Position   = glm::vec4(Position.x, Position.y, Position.z, 1.0f);
     updateViewVector();
   }
 
@@ -41,7 +62,8 @@ class SphericCamera {
   public:
   bool UsePerspectiveProjection;
 
-  SphericCamera(float     theta,
+  SphericCamera(float     speed,
+                float     theta,
                 float     phi,
                 float     distance,
                 glm::vec4 lookAt,
@@ -51,18 +73,20 @@ class SphericCamera {
                 float     fieldOfView,
                 float     screenRatio,
                 bool      usePerspectiveProjection) {
+    Speed    = speed;
     Theta    = theta;
     Phi      = phi;
     Distance = distance;
-
-    LookAt   = lookAt;
-    UpVector = upVector;
 
     NearPlane                = nearPlane;
     FarPlane                 = farPlane;
     FieldOfView              = fieldOfView;
     ScreenRatio              = screenRatio;
     UsePerspectiveProjection = usePerspectiveProjection;
+
+    LookAt   = lookAt;
+    UpVector = upVector;
+
 
     updatePosition();
   }
@@ -142,13 +166,32 @@ class SphericCamera {
     UsePerspectiveProjection = b;
   }
 
+  float getScreenRatio() {
+    return ScreenRatio;
+  }
+
   void setScreenRatio(float screenRatio) {
     ScreenRatio = screenRatio;
   }
+
+  void MoveForward() {
+    Position += ViewVector * Speed;
+    setDistance(glm::length(Position - glm::vec4(0.0f, 0.0f, 0.0f, 0.0f)));
+  }
+
+  void MoveBackward() {
+    Position -= ViewVector * Speed;
+    setDistance(glm::length(Position - glm::vec4(0.0f, 0.0f, 0.0f, 0.0f)));
+  }
+
+  void MoveLeft() {}
+  void MoveRight() {}
+  void MoveUpwards() {}
+  void MoveDownwards() {}
 };
 
 
-class FreeCamera {
+class FreeCamera : public Camera {
   private:
   float Speed;
   float Theta; // Ângulo no plano ZX em relação ao eixo Z
@@ -289,9 +332,23 @@ class FreeCamera {
     return Speed;
   }
 
-  void setDistance() {}
+  void setDistance(float distance) {
+    (void) distance;
+  }
+
+  float getDistance() {
+    return glm::length(Position);
+  }
+
+  float getScreenRatio() {
+    return ScreenRatio;
+  }
 
   void setScreenRatio(float screenRatio) {
     ScreenRatio = screenRatio;
+  }
+
+  void setUsePerspectiveProjection(bool b) {
+    UsePerspectiveProjection = b;
   }
 };

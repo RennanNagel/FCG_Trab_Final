@@ -132,27 +132,30 @@ float g_CameraPhi      = 0.0f; // Ângulo em relação ao eixo Y
 float g_CameraDistance = 3.5f; // Distância da câmera para a origem
 
 // Camera
-SphericCamera camera2(g_CameraTheta,
+SphericCamera sphericCamera(0.5f,
+                            g_CameraTheta,
+                            g_CameraPhi,
+                            g_CameraDistance,
+                            glm::vec4(0.0f, 0.0f, 0.0f, 1.0f),
+                            glm::vec4(0.0f, 1.0f, 0.0f, 0.0f),
+                            -0.01f,
+                            -10.0f,
+                            3.141592 / 3.0f,
+                            (float) WIDTH / HEIGHT,
+                            true);
+
+FreeCamera freeCamera(0.5f,
+                      g_CameraTheta,
                       g_CameraPhi,
-                      g_CameraDistance,
-                      glm::vec4(0.0f, 0.0f, 0.0f, 1.0f),
+                      glm::vec4(-10.0f, 0.0f, 0.0f, 1.0f),
                       glm::vec4(0.0f, 1.0f, 0.0f, 0.0f),
                       -0.01f,
-                      -10.0f,
+                      -1000.0f,
                       3.141592 / 3.0f,
                       (float) WIDTH / HEIGHT,
                       true);
 
-FreeCamera camera(0.5f,
-                  g_CameraTheta,
-                  g_CameraPhi,
-                  glm::vec4(-10.0f, 0.0f, 0.0f, 1.0f),
-                  glm::vec4(0.0f, 1.0f, 0.0f, 0.0f),
-                  -0.01f,
-                  -1000.0f,
-                  3.141592 / 3.0f,
-                  (float) WIDTH / HEIGHT,
-                  true);
+Camera* camera = &freeCamera;
 
 // Variáveis que controlam rotação do antebraço
 float g_ForearmAngleZ = 0.0f;
@@ -290,86 +293,17 @@ int main() {
 
   // Ficamos em um loop infinito, renderizando, até que o usuário feche a janela
   while (!glfwWindowShouldClose(window)) {
-    // Aqui executamos as operações de renderização
-
-    // Definimos a cor do "fundo" do framebuffer como branco.  Tal cor é
-    // definida como coeficientes RGBA: Red, Green, Blue, Alpha; isto é:
-    // Vermelho, Verde, Azul, Alpha (valor de transparência).
-    // Conversaremos sobre sistemas de cores nas aulas de Modelos de Iluminação.
-    //
-    //           R     G     B     A
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-
-    // "Pintamos" todos os pixels do framebuffer com a cor definida acima,
-    // e também resetamos todos os pixels do Z-buffer (depth buffer).
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    // Pedimos para a GPU utilizar o programa de GPU criado acima (contendo
-    // os shaders de vértice e fragmentos).
     glUseProgram(g_GpuProgramID);
-
-    // "Ligamos" o VAO. Informamos que queremos utilizar os atributos de
-    // vértices apontados pelo VAO criado pela função BuildTriangles(). Veja
-    // comentários detalhados dentro da definição de BuildTriangles().
     glBindVertexArray(vertex_array_object_id);
 
-    // Computamos a posição da câmera utilizando coordenadas esféricas.  As
-    // variáveis g_CameraDistance, g_CameraPhi, e g_CameraTheta são
-    // controladas pelo mouse do usuário. Veja as funções CursorPosCallback()
-    // e ScrollCallback().
-    float r = g_CameraDistance;
-    float y = r * sin(g_CameraPhi);
-    float z = r * cos(g_CameraPhi) * cos(g_CameraTheta);
-    float x = r * cos(g_CameraPhi) * sin(g_CameraTheta);
+    glm::mat4 view       = camera->getMatrixView();
+    glm::mat4 projection = camera->getMatrixProjection();
 
-    // Abaixo definimos as varáveis que efetivamente definem a câmera virtual.
-    // Veja slides 195-227 e 229-234 do documento Aula_08_Sistemas_de_Coordenadas.pdf.
-    glm::vec4 camera_position_c  = glm::vec4(x, y, z, 1.0f);            // Ponto "c", centro da câmera
-    glm::vec4 camera_lookat_l    = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);   // Ponto "l", para onde a câmera (look-at) estará sempre olhando
-    glm::vec4 camera_view_vector = camera_lookat_l - camera_position_c; // Vetor "view", sentido para onde a câmera está virada
-    glm::vec4 camera_up_vector   = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);   // Vetor "up" fixado para apontar para o "céu" (eixo Y global)
-
-    // Computamos a matriz "View" utilizando os parâmetros da câmera para
-    // definir o sistema de coordenadas da câmera.  Veja slides 2-14, 184-190 e 236-242 do documento Aula_08_Sistemas_de_Coordenadas.pdf.
-    // glm::mat4 view = Matrix_Camera_View(camera_position_c, camera_view_vector, camera_up_vector);
-    glm::mat4 view = camera.getMatrixView();
-
-    // Agora computamos a matriz de Projeção.
-    glm::mat4 projection = camera.getMatrixProjection();
-
-    // Note que, no sistema de coordenadas da câmera, os planos near e far
-    // estão no sentido negativo! Veja slides 176-204 do documento Aula_09_Projecoes.pdf.
-    // float nearplane = -0.1f;  // Posição do "near plane"
-    // float farplane  = -10.0f; // Posição do "far plane"
-
-    // if (camera.UsePerspectiveProjection) {
-    //   // Projeção Perspectiva.
-    //   // Para definição do field of view (FOV), veja slides 205-215 do documento Aula_09_Projecoes.pdf.
-    //   float field_of_view = 3.141592 / 3.0f;
-    //   // projection          = Matrix_Perspective(field_of_view, g_ScreenRatio, nearplane, farplane);
-    //   projection = camera.getMatrixProjection();
-    // } else {
-    //   // Projeção Ortográfica.
-    //   // Para definição dos valores l, r, b, t ("left", "right", "bottom", "top"),
-    //   // PARA PROJEÇÃO ORTOGRÁFICA veja slides 219-224 do documento Aula_09_Projecoes.pdf.
-    //   // Para simular um "zoom" ortográfico, computamos o valor de "t"
-    //   // utilizando a variável g_CameraDistance.
-    //   float t    = 1.5f * g_CameraDistance / 2.5f;
-    //   float b    = -t;
-    //   float r    = t * g_ScreenRatio;
-    //   float l    = -r;
-    //   projection = Matrix_Orthographic(l, r, b, t, nearplane, farplane);
-    // }
-    //
-    // Enviamos as matrizes "view" e "projection" para a placa de vídeo
-    // (GPU). Veja o arquivo "shader_vertex.glsl", onde estas são
-    // efetivamente aplicadas em todos os pontos.
     glUniformMatrix4fv(view_uniform, 1, GL_FALSE, glm::value_ptr(view));
     glUniformMatrix4fv(projection_uniform, 1, GL_FALSE, glm::value_ptr(projection));
 
-    // Desenhamos o modelo do boneco
-
-    // Torso (corpo principal)
     glm::mat4 model = Matrix_Identity(); // Transformação inicial do modelo
 
     // Translação global do modelo
@@ -1014,7 +948,7 @@ void FramebufferSizeCallback(GLFWwindow* window, int width, int height) {
   // O cast para float é necessário pois números inteiros são arredondados ao
   // serem divididos!
   // g_ScreenRatio = (float) width / height;
-  camera.setScreenRatio((float) width / height);
+  camera->setScreenRatio((float) width / height);
 }
 
 // Variáveis globais que armazenam a última posição do cursor do mouse, para
@@ -1086,13 +1020,13 @@ void CursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
     // g_CameraTheta -= 0.01f * dx;
     // g_CameraPhi += 0.01f * dy;
 
-    float newTheta = camera.getTheta();
+    float newTheta = camera->getTheta();
     newTheta -= 0.01f * dx;
-    camera.setTheta(newTheta);
+    camera->setTheta(newTheta);
 
-    float newPhi = camera.getPhi();
+    float newPhi = camera->getPhi();
     newPhi -= 0.01f * dy;
-    camera.setPhi(newPhi);
+    camera->setPhi(newPhi);
 
     // Atualizamos as variáveis globais para armazenar a posição atual do
     // cursor como sendo a última posição conhecida do cursor.
@@ -1132,54 +1066,60 @@ void CursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
 }
 
 // Função callback chamada sempre que o usuário movimenta a "rodinha" do mouse.
-void ScrollCallback(GLFWwindow* window, SphericCamera camera, double xoffset, double yoffset) {
+void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
   // Atualizamos a distância da câmera para a origem utilizando a
   // movimentação da "rodinha", simulando um ZOOM.
   // g_CameraDistance -= 0.1f * yoffset;
-  float newDistance = camera.getDistance();
+  float newDistance = camera->getDistance();
   newDistance -= 0.1f * yoffset;
-  camera.setDistance(newDistance);
+  camera->setDistance(newDistance);
 }
 
 // Definição da função que será chamada sempre que o usuário pressionar alguma
 // tecla do teclado. Veja http://www.glfw.org/docs/latest/input_guide.html#input_key
 void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mod) {
+  if (key == GLFW_KEY_C && action == GLFW_PRESS) {
+    float screenRatio = camera->getScreenRatio();
+    camera            = (camera == &freeCamera) ? (Camera*) &sphericCamera : (Camera*) &freeCamera;
+    camera->setScreenRatio(screenRatio);
+  }
+
   if (key == GLFW_KEY_Q && action == GLFW_PRESS)
     glfwSetWindowShouldClose(window, GL_TRUE);
 
   if (key == GLFW_KEY_W && action == GLFW_PRESS) {
-    camera.MoveForward();
+    camera->MoveForward();
   }
 
   if (key == GLFW_KEY_A && action == GLFW_PRESS) {
-    camera.MoveLeft();
+    camera->MoveLeft();
   }
 
   if (key == GLFW_KEY_S && action == GLFW_PRESS) {
-    camera.MoveBackward();
+    camera->MoveBackward();
   }
 
   if (key == GLFW_KEY_D && action == GLFW_PRESS) {
-    camera.MoveRight();
+    camera->MoveRight();
   }
 
   // Se o usuário apertar a tecla P, utilizamos projeção perspectiva.
   if (key == GLFW_KEY_P && action == GLFW_PRESS) {
-    camera.UsePerspectiveProjection = true;
+    camera->UsePerspectiveProjection = true;
   }
 
   // Se o usuário apertar a tecla O, utilizamos projeção ortográfica.
   if (key == GLFW_KEY_O && action == GLFW_PRESS) {
-    camera.UsePerspectiveProjection = false;
+    camera->UsePerspectiveProjection = false;
   }
 
 
   if (key == GLFW_KEY_SPACE && action == GLFW_PRESS && mod != GLFW_MOD_SHIFT) {
-    camera.MoveUpwards();
+    camera->MoveUpwards();
   }
 
   if (key == GLFW_KEY_SPACE && action == GLFW_PRESS && mod == GLFW_MOD_SHIFT) {
-    camera.MoveDownwards();
+    camera->MoveDownwards();
   }
 
   // Se o usuário apertar a tecla H, fazemos um "toggle" do texto informativo mostrado na tela.
