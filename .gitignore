@@ -1,4 +1,4 @@
-build/
-.cache/
-CMakeFiles/
-bin/
+build/**
+.cache/**
+CMakeFiles/**
+bin/**
