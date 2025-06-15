@@ -4,7 +4,7 @@ Language: Cpp
 ColumnLimit: 150
 
 # Indentation
-IndentWidth: 4
+IndentWidth: 2
 UseTab: Never
 AccessModifierOffset: -4
 NamespaceIndentation: None
@@ -59,3 +59,6 @@ IncludeBlocks: Preserve
 # Constructor formatting
 BreakConstructorInitializers: BeforeColon
 PackConstructorInitializers: NextLine 
+
+SortIncludes: false
+BinPackParameters: false

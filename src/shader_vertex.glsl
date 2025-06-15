@@ -19,9 +19,6 @@ uniform mat4 projection;
 // Variável booleana no código C++ também enviada para a GPU
 uniform bool render_as_black;
 
-// Color override uniform
-uniform vec4 color_override = vec4(1.0, 1.0, 1.0, 0.0);  // Default: no override (alpha = 0)
-
 void main()
 {
     // A variável gl_Position define a posição final de cada vértice
@@ -53,10 +50,6 @@ void main()
         // Ignoramos o atributo cor dos vértices, colocando a cor final como
         // preta. Utilizamos isto para renderizar as arestas pretas dos cubos.
         cor_interpolada_pelo_rasterizador = vec4(0.0f,0.0f,0.0f,1.0f);
-    }
-    else if (color_override.a > 0.0)  // If alpha > 0, use override color
-    {
-        cor_interpolada_pelo_rasterizador = color_override;
     }
     else
     {
