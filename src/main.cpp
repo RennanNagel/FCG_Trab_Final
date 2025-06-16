@@ -288,8 +288,8 @@ int main(int argc, char* argv[]) {
   LoadShadersFromFiles();
 
   // Carregamos duas imagens para serem utilizadas como textura
-  LoadTextureImage("../../data/tc-earth_daymap_surface.jpg");      // TextureImage0
-  LoadTextureImage("../../data/tc-earth_nightmap_citylights.gif"); // TextureImage1
+  LoadTextureImage("../../data/plane.png");         // TextureImage0
+  LoadTextureImage("../../data/floor_normals.png"); // TextureImage1
 
   // Construímos a representação de objetos geométricos através de malhas de triângulos
   ObjModel spheremodel("../../data/sphere.obj");
@@ -366,8 +366,8 @@ int main(int argc, char* argv[]) {
 
     // Note que, no sistema de coordenadas da câmera, os planos near e far
     // estão no sentido negativo! Veja slides 176-204 do documento Aula_09_Projecoes.pdf.
-    float nearplane = -0.1f;  // Posição do "near plane"
-    float farplane  = -10.0f; // Posição do "far plane"
+    float nearplane = -0.1f;    // Posição do "near plane"
+    float farplane  = -1000.0f; // Posição do "far plane"
 
     if (g_UsePerspectiveProjection) {
       // Projeção Perspectiva.
@@ -413,10 +413,14 @@ int main(int argc, char* argv[]) {
     DrawVirtualObject("the_bunny");
 
     // Desenhamos o plano do chão
-    model = Matrix_Translate(0.0f, -1.1f, 0.0f);
-    glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform1i(g_object_id_uniform, PLANE);
-    DrawVirtualObject("the_plane");
+    for (int x = -10; x < 10; ++x) {
+      for (int z = -10; z < 10; ++z) {
+        model = Matrix_Translate(x, -1.0f, z);
+        glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+        glUniform1i(g_object_id_uniform, PLANE);
+        DrawVirtualObject("the_plane");
+      }
+    }
 
     // Imprimimos na tela os ângulos de Euler que controlam a rotação do
     // terceiro cubo.
@@ -476,8 +480,8 @@ void LoadTextureImage(const char* filename) {
   glGenSamplers(1, &sampler_id);
 
   // Veja slides 95-96 do documento Aula_20_Mapeamento_de_Texturas.pdf
-  glSamplerParameteri(sampler_id, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glSamplerParameteri(sampler_id, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glSamplerParameteri(sampler_id, GL_TEXTURE_WRAP_S, GL_REPEAT);
+  glSamplerParameteri(sampler_id, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
   // Parâmetros de amostragem da textura.
   glSamplerParameteri(sampler_id, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);

@@ -120,15 +120,19 @@ void main()
         // Coordenadas de textura do plano, obtidas do arquivo OBJ.
         U = texcoords.x;
         V = texcoords.y;
+        n = vec4(normalize(texture(TextureImage1, vec2(U, V)).rgb), 0.0f);
+
     }
 
     // Obtemos a refletância difusa a partir da leitura da imagem TextureImage0
     vec3 Kd0 = texture(TextureImage0, vec2(U,V)).rgb;
 
-    if (object_id == SPHERE) 
-    {
-        Kd0 += min(50, max(-100*dot(n,l), 0))*texture(TextureImage1, vec2(U, V)).rgb;
-    }
+    // if (object_id == SPHERE) 
+    // {
+    //     Kd0 += min(50, max(-100*dot(n,l), 0))*texture(TextureImage1, vec2(U, V)).rgb;
+    // }
+    
+    // vec4 n = vec4(normalize(texture(TextureImage1, vec2(U, V)).rgb), 0.0f);
 
     // Equação de Iluminação
     float lambert = max(0,dot(n,l));
