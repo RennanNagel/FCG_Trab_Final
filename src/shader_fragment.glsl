@@ -68,6 +68,8 @@ void main()
     float U = 0.0;
     float V = 0.0;
 
+    float ao = 1.0;
+
     if ( object_id == SPHERE )
     {
         // PREENCHA AQUI as coordenadas de textura da esfera, computadas com
@@ -91,6 +93,7 @@ void main()
 
         U = (theta + M_PI)/(2*M_PI);
         V = (phi + M_PI_2)/M_PI;
+        ao = texture(TextureImage0, vec2(U, V)).r;
     }
     else if ( object_id == BUNNY )
     {
@@ -121,7 +124,7 @@ void main()
         U = texcoords.x;
         V = texcoords.y;
         n = vec4(normalize(texture(TextureImage1, vec2(U, V)).rgb), 0.0f);
-
+        ao = texture(TextureImage0, vec2(U, V)).r;
     }
 
     // Obtemos a refletância difusa a partir da leitura da imagem TextureImage0
@@ -137,7 +140,7 @@ void main()
     // Equação de Iluminação
     float lambert = max(0,dot(n,l));
 
-    color.rgb = Kd0 * (lambert + 0.01);
+    color.rgb = Kd0 * (lambert + 0.01) * ao;
 
     // NOTE: Se você quiser fazer o rendering de objetos transparentes, é
     // necessário:
