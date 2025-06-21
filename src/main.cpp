@@ -45,6 +45,7 @@
 #include <stb_image.h>
 
 // Headers locais, definidos na pasta "include/"
+#include "glm/ext/vector_float3.hpp"
 #include "utils.h"
 #include "matrices.h"
 
@@ -107,14 +108,14 @@ void PopMatrix(glm::mat4& M);
 
 // Declaração de várias funções utilizadas em main().  Essas estão definidas
 // logo após a definição de main() neste arquivo.
-void   BuildTrianglesAndAddToVirtualScene(ObjModel*);      // Constrói representação de um ObjModel como malha de triângulos para renderização
-void   ComputeNormals(ObjModel* model);                    // Computa normais de um ObjModel, caso não existam.
-void   LoadShadersFromFiles();                             // Carrega os shaders de vértice e fragmento, criando um programa de GPU
-void   LoadTextureImage(const char* filename);             // Função que carrega imagens de textura
-void   DrawVirtualObject(const char* object_name);         // Desenha um objeto armazenado em g_VirtualScene
-GLuint LoadShader_Vertex(const char* filename);            // Carrega um vertex shader
-GLuint LoadShader_Fragment(const char* filename);          // Carrega um fragment shader
-void   LoadShader(const char* filename, GLuint shader_id); // Função utilizada pelas duas acima
+void   BuildTrianglesAndAddToVirtualScene(ObjModel*);                        // Constrói representação de um ObjModel como malha de triângulos para renderização
+void   ComputeNormals(ObjModel* model);                                      // Computa normais de um ObjModel, caso não existam.
+void   LoadShadersFromFiles();                                               // Carrega os shaders de vértice e fragmento, criando um programa de GPU
+void   LoadTextureImage(const char* filename);                               // Função que carrega imagens de textura
+void   DrawVirtualObject(const char* object_name);                           // Desenha um objeto armazenado em g_VirtualScene
+GLuint LoadShader_Vertex(const char* filename);                              // Carrega um vertex shader
+GLuint LoadShader_Fragment(const char* filename);                            // Carrega um fragment shader
+void   LoadShader(const char* filename, GLuint shader_id);                   // Função utilizada pelas duas acima
 GLuint CreateGpuProgram(GLuint vertex_shader_id, GLuint fragment_shader_id); // Cria um programa de GPU
 void   PrintObjModelInfo(ObjModel*);                                         // Função para debugging
 
@@ -146,16 +147,24 @@ void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 void CursorPosCallback(GLFWwindow* window, double xpos, double ypos);
 void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 
-// Definimos uma estrutura que armazenará dados necessários para renderizar
-// cada objeto da cena virtual.
+
+struct FaceGroup {
+  int                 material_id;
+  std::vector<size_t> face_indices;
+};
+
 struct SceneObject {
-  std::string name;                   // Nome do objeto
-  size_t      first_index;            // Índice do primeiro vértice dentro do vetor indices[] definido em BuildTrianglesAndAddToVirtualScene()
-  size_t      num_indices;            // Número de índices do objeto dentro do vetor indices[] definido em BuildTrianglesAndAddToVirtualScene()
-  GLenum      rendering_mode;         // Modo de rasterização (GL_TRIANGLES, GL_TRIANGLE_STRIP, etc.)
-  GLuint      vertex_array_object_id; // ID do VAO onde estão armazenados os atributos do modelo
-  glm::vec3   bbox_min;               // Axis-Aligned Bounding Box do objeto
-  glm::vec3   bbox_max;
+  std::string            name;
+  std::vector<FaceGroup> groups;
+
+  GLenum rendering_mode;
+  GLuint vertex_array_object_id;
+
+  glm::vec3 bbox_min;
+  glm::vec3 bbox_max;
+
+  std::vector<tinyobj::material_t> materials;
+  tinyobj::material_t              default_material;
 };
 
 // Abaixo definimos variáveis globais utilizadas em várias funções do código.
@@ -216,6 +225,50 @@ GLint  g_bbox_max_uniform;
 
 // Número de texturas carregadas pela função LoadTextureImage()
 GLuint g_NumLoadedTextures = 0;
+
+tinyobj::material_t g_DefaultMaterial = [] {
+  tinyobj::material_t mat;
+  mat.name = "DefaultMaterial";
+
+  // Ambient (Ka)
+  mat.ambient[0] = 0.0f;
+  mat.ambient[1] = 0.0f;
+  mat.ambient[2] = 0.0f;
+
+  // Diffuse (Kd)
+  mat.diffuse[0] = 0.0f;
+  mat.diffuse[1] = 0.0f;
+  mat.diffuse[2] = 0.0f;
+
+  // Specular (Ks)
+  mat.specular[0] = 0.0f;
+  mat.specular[1] = 0.0f;
+  mat.specular[2] = 0.0f;
+
+  // Emission (Ke)
+  mat.emission[0] = 0.0f;
+  mat.emission[1] = 0.0f;
+  mat.emission[2] = 0.0f;
+
+  // Shininess (Ns)
+  mat.shininess = 1.0f;
+
+  // Opacity (d)
+  mat.dissolve = 1.0f;
+
+  // No textures
+  mat.ambient_texname  = "";
+  mat.diffuse_texname  = "";
+  mat.specular_texname = "";
+  mat.normal_texname   = "";
+
+  return mat;
+}();
+
+GLint g_kd_uniform;
+GLint g_ka_uniform;
+GLint g_ks_uniform;
+GLint g_q_uniform;
 
 int main(int argc, char* argv[]) {
   // Inicializamos a biblioteca GLFW, utilizada para criar uma janela do
@@ -292,17 +345,22 @@ int main(int argc, char* argv[]) {
   LoadTextureImage("../../data/floor_normals.png"); // TextureImage1
 
   // Construímos a representação de objetos geométricos através de malhas de triângulos
-  ObjModel spheremodel("../../data/sphere.obj");
-  ComputeNormals(&spheremodel);
-  BuildTrianglesAndAddToVirtualScene(&spheremodel);
-
-  ObjModel bunnymodel("../../data/bunny.obj");
-  ComputeNormals(&bunnymodel);
-  BuildTrianglesAndAddToVirtualScene(&bunnymodel);
+  // ObjModel spheremodel("../../data/sphere.obj");
+  // ComputeNormals(&spheremodel);
+  // BuildTrianglesAndAddToVirtualScene(&spheremodel);
+  //
+  // ObjModel bunnymodel("../../data/bunny.obj");
+  // ComputeNormals(&bunnymodel);
+  // BuildTrianglesAndAddToVirtualScene(&bunnymodel);
 
   ObjModel planemodel("../../data/plane.obj");
   ComputeNormals(&planemodel);
   BuildTrianglesAndAddToVirtualScene(&planemodel);
+
+  ObjModel pacmanmodel("../../data/pacman.obj");
+  ComputeNormals(&pacmanmodel);
+  BuildTrianglesAndAddToVirtualScene(&pacmanmodel);
+
 
   if (argc > 1) {
     ObjModel model(argv[1]);
@@ -398,29 +456,32 @@ int main(int argc, char* argv[]) {
 #define SPHERE 0
 #define BUNNY 1
 #define PLANE 2
+#define PACMAN 3
 
     // Desenhamos o modelo da esfera
-    model = Matrix_Translate(-1.0f, 0.0f, 0.0f) * Matrix_Rotate_Z(0.6f) * Matrix_Rotate_X(0.2f) *
-            Matrix_Rotate_Y(g_AngleY + (float) glfwGetTime() * 0.1f);
-    glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform1i(g_object_id_uniform, SPHERE);
-    DrawVirtualObject("the_sphere");
+    // model = Matrix_Translate(-1.0f, 0.0f, 0.0f) * Matrix_Rotate_Z(0.6f) * Matrix_Rotate_X(0.2f) *
+    //         Matrix_Rotate_Y(g_AngleY + (float) glfwGetTime() * 0.1f);
+    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    // glUniform1i(g_object_id_uniform, SPHERE);
+    // DrawVirtualObject("the_sphere");
 
     // Desenhamos o modelo do coelho
-    model = Matrix_Translate(1.0f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
+    // model = Matrix_Translate(1.0f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
+    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    // glUniform1i(g_object_id_uniform, BUNNY);
+    // DrawVirtualObject("the_bunny");
+
+    model = Matrix_Translate(1.0f, 1.0f, 0.0f) * Matrix_Scale(0.01f, 0.01f, 0.01f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
     glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform1i(g_object_id_uniform, BUNNY);
-    DrawVirtualObject("the_bunny");
+    glUniform1i(g_object_id_uniform, PACMAN);
+    DrawVirtualObject("pacman");
 
     // Desenhamos o plano do chão
-    for (int x = -10; x < 10; ++x) {
-      for (int z = -10; z < 10; ++z) {
-        model = Matrix_Translate(x, -1.0f, z);
-        glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-        glUniform1i(g_object_id_uniform, PLANE);
-        DrawVirtualObject("the_plane");
-      }
-    }
+    model = Matrix_Translate(x, -1.0f, z) * Matrix_Scale(100, 1, 100);
+    glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    glUniform1i(g_object_id_uniform, PLANE);
+    DrawVirtualObject("the_plane");
+
 
     // Imprimimos na tela os ângulos de Euler que controlam a rotação do
     // terceiro cubo.
@@ -508,28 +569,36 @@ void LoadTextureImage(const char* filename) {
 // Função que desenha um objeto armazenado em g_VirtualScene. Veja definição
 // dos objetos na função BuildTrianglesAndAddToVirtualScene().
 void DrawVirtualObject(const char* object_name) {
-  // "Ligamos" o VAO. Informamos que queremos utilizar os atributos de
-  // vértices apontados pelo VAO criado pela função BuildTrianglesAndAddToVirtualScene(). Veja
-  // comentários detalhados dentro da definição de BuildTrianglesAndAddToVirtualScene().
-  glBindVertexArray(g_VirtualScene[object_name].vertex_array_object_id);
+  const SceneObject& obj = g_VirtualScene[object_name];
 
-  // Setamos as variáveis "bbox_min" e "bbox_max" do fragment shader
-  // com os parâmetros da axis-aligned bounding box (AABB) do modelo.
-  glm::vec3 bbox_min = g_VirtualScene[object_name].bbox_min;
-  glm::vec3 bbox_max = g_VirtualScene[object_name].bbox_max;
+  glBindVertexArray(obj.vertex_array_object_id);
+
+  // Pass bounding box uniforms
+  glm::vec3 bbox_min = obj.bbox_min;
+  glm::vec3 bbox_max = obj.bbox_max;
   glUniform4f(g_bbox_min_uniform, bbox_min.x, bbox_min.y, bbox_min.z, 1.0f);
   glUniform4f(g_bbox_max_uniform, bbox_max.x, bbox_max.y, bbox_max.z, 1.0f);
 
-  // Pedimos para a GPU rasterizar os vértices dos eixos XYZ
-  // apontados pelo VAO como linhas. Veja a definição de
-  // g_VirtualScene[""] dentro da função BuildTrianglesAndAddToVirtualScene(), e veja
-  // a documentação da função glDrawElements() em
-  // http://docs.gl/gl3/glDrawElements.
-  glDrawElements(g_VirtualScene[object_name].rendering_mode, g_VirtualScene[object_name].num_indices, GL_UNSIGNED_INT,
-                 (void*) (g_VirtualScene[object_name].first_index * sizeof(GLuint)));
+  // Draw each material group
+  for (const auto& group : obj.groups) {
+    const tinyobj::material_t& material =
+        (group.material_id >= 0 && group.material_id < obj.materials.size())
+            ? obj.materials[group.material_id]
+            : obj.default_material;
 
-  // "Desligamos" o VAO, evitando assim que operações posteriores venham a
-  // alterar o mesmo. Isso evita bugs.
+    // Set material diffuse color (you can expand this to textures later)
+    glUniform3fv(g_kd_uniform, 1, material.diffuse);
+    glUniform3fv(g_ka_uniform, 1, material.ambient);
+    glUniform3fv(g_ks_uniform, 1, material.specular);
+    glUniform1f(g_q_uniform, material.shininess);
+
+    // Draw all faces with this material
+    for (size_t face : group.face_indices) {
+      size_t offset = face * 3 * sizeof(GLuint);
+      glDrawElements(obj.rendering_mode, 3, GL_UNSIGNED_INT, (void*) (offset));
+    }
+  }
+
   glBindVertexArray(0);
 }
 
@@ -574,6 +643,11 @@ void LoadShadersFromFiles() {
   g_object_id_uniform  = glGetUniformLocation(g_GpuProgramID, "object_id");  // Variável "object_id" em shader_fragment.glsl
   g_bbox_min_uniform   = glGetUniformLocation(g_GpuProgramID, "bbox_min");
   g_bbox_max_uniform   = glGetUniformLocation(g_GpuProgramID, "bbox_max");
+  g_kd_uniform         = glGetUniformLocation(g_GpuProgramID, "kd");
+  g_ka_uniform         = glGetUniformLocation(g_GpuProgramID, "ka");
+  g_ks_uniform         = glGetUniformLocation(g_GpuProgramID, "ks");
+  g_q_uniform          = glGetUniformLocation(g_GpuProgramID, "q");
+
 
   // Variáveis em "shader_fragment.glsl" para acesso das imagens de textura
   glUseProgram(g_GpuProgramID);
@@ -667,31 +741,48 @@ void BuildTrianglesAndAddToVirtualScene(ObjModel* model) {
   std::vector<float>  texture_coefficients;
 
   for (size_t shape = 0; shape < model->shapes.size(); ++shape) {
-    size_t first_index   = indices.size();
-    size_t num_triangles = model->shapes[shape].mesh.num_face_vertices.size();
+    auto&  mesh      = model->shapes[shape].mesh;
+    size_t num_faces = mesh.num_face_vertices.size();
 
-    const float minval = std::numeric_limits<float>::min();
-    const float maxval = std::numeric_limits<float>::max();
+    glm::vec3 bbox_min(std::numeric_limits<float>::max());
+    glm::vec3 bbox_max(std::numeric_limits<float>::lowest());
 
-    glm::vec3 bbox_min = glm::vec3(maxval, maxval, maxval);
-    glm::vec3 bbox_max = glm::vec3(minval, minval, minval);
+    SceneObject theobject;
+    theobject.name                   = model->shapes[shape].name;
+    theobject.rendering_mode         = GL_TRIANGLES;
+    theobject.vertex_array_object_id = vertex_array_object_id;
 
-    for (size_t triangle = 0; triangle < num_triangles; ++triangle) {
-      assert(model->shapes[shape].mesh.num_face_vertices[triangle] == 3);
+    if (model->materials.empty()) {
+      // OBJ has no .mtl — just empty
+      theobject.default_material = g_DefaultMaterial;
+    } else {
+      theobject.materials        = model->materials;
+      theobject.default_material = g_DefaultMaterial; // Always safe fallback
+    }
+
+    // Grouping faces by material
+    std::map<int, FaceGroup> group_map;
+
+    for (size_t face = 0; face < num_faces; ++face) {
+      assert(mesh.num_face_vertices[face] == 3);
+
+      int material_id                    = mesh.material_ids[face];
+      group_map[material_id].material_id = material_id;
+      group_map[material_id].face_indices.push_back(face);
 
       for (size_t vertex = 0; vertex < 3; ++vertex) {
-        tinyobj::index_t idx = model->shapes[shape].mesh.indices[3 * triangle + vertex];
+        tinyobj::index_t idx = mesh.indices[3 * face + vertex];
 
-        indices.push_back(first_index + 3 * triangle + vertex);
+        indices.push_back(indices.size());
 
         const float vx = model->attrib.vertices[3 * idx.vertex_index + 0];
         const float vy = model->attrib.vertices[3 * idx.vertex_index + 1];
         const float vz = model->attrib.vertices[3 * idx.vertex_index + 2];
-        // printf("tri %d vert %d = (%.2f, %.2f, %.2f)\n", (int)triangle, (int)vertex, vx, vy, vz);
-        model_coefficients.push_back(vx);   // X
-        model_coefficients.push_back(vy);   // Y
-        model_coefficients.push_back(vz);   // Z
-        model_coefficients.push_back(1.0f); // W
+
+        model_coefficients.push_back(vx);
+        model_coefficients.push_back(vy);
+        model_coefficients.push_back(vz);
+        model_coefficients.push_back(1.0f);
 
         bbox_min.x = std::min(bbox_min.x, vx);
         bbox_min.y = std::min(bbox_min.y, vy);
@@ -700,19 +791,14 @@ void BuildTrianglesAndAddToVirtualScene(ObjModel* model) {
         bbox_max.y = std::max(bbox_max.y, vy);
         bbox_max.z = std::max(bbox_max.z, vz);
 
-        // Inspecionando o código da tinyobjloader, o aluno Bernardo
-        // Sulzbach (2017/1) apontou que a maneira correta de testar se
-        // existem normais e coordenadas de textura no ObjModel é
-        // comparando se o índice retornado é -1. Fazemos isso abaixo.
-
         if (idx.normal_index != -1) {
           const float nx = model->attrib.normals[3 * idx.normal_index + 0];
           const float ny = model->attrib.normals[3 * idx.normal_index + 1];
           const float nz = model->attrib.normals[3 * idx.normal_index + 2];
-          normal_coefficients.push_back(nx);   // X
-          normal_coefficients.push_back(ny);   // Y
-          normal_coefficients.push_back(nz);   // Z
-          normal_coefficients.push_back(0.0f); // W
+          normal_coefficients.push_back(nx);
+          normal_coefficients.push_back(ny);
+          normal_coefficients.push_back(nz);
+          normal_coefficients.push_back(0.0f);
         }
 
         if (idx.texcoord_index != -1) {
@@ -724,30 +810,25 @@ void BuildTrianglesAndAddToVirtualScene(ObjModel* model) {
       }
     }
 
-    size_t last_index = indices.size() - 1;
-
-    SceneObject theobject;
-    theobject.name                   = model->shapes[shape].name;
-    theobject.first_index            = first_index;                  // Primeiro índice
-    theobject.num_indices            = last_index - first_index + 1; // Número de indices
-    theobject.rendering_mode         = GL_TRIANGLES;                 // Índices correspondem ao tipo de rasterização GL_TRIANGLES.
-    theobject.vertex_array_object_id = vertex_array_object_id;
-
     theobject.bbox_min = bbox_min;
     theobject.bbox_max = bbox_max;
 
-    g_VirtualScene[model->shapes[shape].name] = theobject;
+    for (auto& pair : group_map) {
+      theobject.groups.push_back(pair.second);
+    }
+
+    g_VirtualScene[theobject.name] = theobject;
   }
+
+  // Upload vertex data
 
   GLuint VBO_model_coefficients_id;
   glGenBuffers(1, &VBO_model_coefficients_id);
   glBindBuffer(GL_ARRAY_BUFFER, VBO_model_coefficients_id);
   glBufferData(GL_ARRAY_BUFFER, model_coefficients.size() * sizeof(float), NULL, GL_STATIC_DRAW);
   glBufferSubData(GL_ARRAY_BUFFER, 0, model_coefficients.size() * sizeof(float), model_coefficients.data());
-  GLuint location             = 0; // "(location = 0)" em "shader_vertex.glsl"
-  GLint  number_of_dimensions = 4; // vec4 em "shader_vertex.glsl"
-  glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
-  glEnableVertexAttribArray(location);
+  glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, 0);
+  glEnableVertexAttribArray(0);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
   if (!normal_coefficients.empty()) {
@@ -756,10 +837,8 @@ void BuildTrianglesAndAddToVirtualScene(ObjModel* model) {
     glBindBuffer(GL_ARRAY_BUFFER, VBO_normal_coefficients_id);
     glBufferData(GL_ARRAY_BUFFER, normal_coefficients.size() * sizeof(float), NULL, GL_STATIC_DRAW);
     glBufferSubData(GL_ARRAY_BUFFER, 0, normal_coefficients.size() * sizeof(float), normal_coefficients.data());
-    location             = 1; // "(location = 1)" em "shader_vertex.glsl"
-    number_of_dimensions = 4; // vec4 em "shader_vertex.glsl"
-    glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
-    glEnableVertexAttribArray(location);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(1);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
   }
 
@@ -769,25 +848,17 @@ void BuildTrianglesAndAddToVirtualScene(ObjModel* model) {
     glBindBuffer(GL_ARRAY_BUFFER, VBO_texture_coefficients_id);
     glBufferData(GL_ARRAY_BUFFER, texture_coefficients.size() * sizeof(float), NULL, GL_STATIC_DRAW);
     glBufferSubData(GL_ARRAY_BUFFER, 0, texture_coefficients.size() * sizeof(float), texture_coefficients.data());
-    location             = 2; // "(location = 1)" em "shader_vertex.glsl"
-    number_of_dimensions = 2; // vec2 em "shader_vertex.glsl"
-    glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
-    glEnableVertexAttribArray(location);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(2);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
   }
 
   GLuint indices_id;
   glGenBuffers(1, &indices_id);
-
-  // "Ligamos" o buffer. Note que o tipo agora é GL_ELEMENT_ARRAY_BUFFER.
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indices_id);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), NULL, GL_STATIC_DRAW);
   glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, indices.size() * sizeof(GLuint), indices.data());
-  // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0); // XXX Errado!
-  //
 
-  // "Desligamos" o VAO, evitando assim que operações posteriores venham a
-  // alterar o mesmo. Isso evita bugs.
   glBindVertexArray(0);
 }
 
@@ -1316,6 +1387,7 @@ void PrintObjModelInfo(ObjModel* model) {
       size_t fnum = shapes[i].mesh.num_face_vertices[f];
 
       printf("  face[%ld].fnum = %ld\n", static_cast<long>(f), static_cast<unsigned long>(fnum));
+      getchar();
 
       // For each vertex in the face
       for (size_t v = 0; v < fnum; v++) {

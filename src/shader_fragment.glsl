@@ -18,10 +18,18 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 
+// Material uniforms
+uniform vec3 kd;
+uniform vec3 ka;
+uniform vec3 ks;
+uniform float q;
+
 // Identificador que define qual objeto está sendo desenhado no momento
 #define SPHERE 0
 #define BUNNY  1
 #define PLANE  2
+#define PACMAN 3
+
 uniform int object_id;
 
 // Parâmetros da axis-aligned bounding box (AABB) do modelo
@@ -58,6 +66,11 @@ void main()
     // normais de cada vértice.
     vec4 n = normalize(normal);
 
+    // Vetor que define espectro da fonte de luz 
+    vec3 I = vec3(1.0, 1.0, 1.0);
+
+    vec3 Ia = vec3(1.0, 1.0, 1.0);
+
     // Vetor que define o sentido da fonte de luz em relação ao ponto atual.
     vec4 l = normalize(vec4(1.0,1.0,0.0,0.0));
 
@@ -67,7 +80,6 @@ void main()
     // Coordenadas de textura U e V
     float U = 0.0;
     float V = 0.0;
-
     float ao = 1.0;
 
     if ( object_id == SPHERE )
@@ -118,14 +130,16 @@ void main()
         U = (position_model.x - minx) / (maxx - minx);
         V = (position_model.y - miny) / (maxy - miny);
     }
+
     else if ( object_id == PLANE )
     {
         // Coordenadas de textura do plano, obtidas do arquivo OBJ.
-        U = texcoords.x;
-        V = texcoords.y;
+        U = texcoords.x * 100;
+        V = texcoords.y * 100;
         n = vec4(normalize(texture(TextureImage1, vec2(U, V)).rgb), 0.0f);
         ao = texture(TextureImage0, vec2(U, V)).r;
     }
+
 
     // Obtemos a refletância difusa a partir da leitura da imagem TextureImage0
     vec3 Kd0 = texture(TextureImage0, vec2(U,V)).rgb;
@@ -137,10 +151,16 @@ void main()
     
     // vec4 n = vec4(normalize(texture(TextureImage1, vec2(U, V)).rgb), 0.0f);
 
+    if ( object_id == PACMAN ) 
+    {
+        Kd0 = kd;
+    }
+
     // Equação de Iluminação
     float lambert = max(0,dot(n,l));
 
-    color.rgb = Kd0 * (lambert + 0.01) * ao;
+    vec4 r = -l + 2*n*dot(n,l);
+    color.rgb = Kd0 * I * (lambert + 0.01) + ks*I*pow(max(0,dot(r, v)),q);
 
     // NOTE: Se você quiser fazer o rendering de objetos transparentes, é
     // necessário:

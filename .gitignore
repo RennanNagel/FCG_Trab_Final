@@ -5,6 +5,8 @@
 !*/
 
 # Keep src and include directories and their contents
+!data/
+!data/**
 !src/
 !src/**
 !include/
