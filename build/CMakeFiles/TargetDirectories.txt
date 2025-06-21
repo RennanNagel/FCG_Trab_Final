@@ -1,4 +1,0 @@
-/home/lucas/Documentos/Projects/sem25-1/fcg/Laboratorio_3_Codigo_Fonte/build/CMakeFiles/main.dir
-/home/lucas/Documentos/Projects/sem25-1/fcg/Laboratorio_3_Codigo_Fonte/build/CMakeFiles/run.dir
-/home/lucas/Documentos/Projects/sem25-1/fcg/Laboratorio_3_Codigo_Fonte/build/CMakeFiles/edit_cache.dir
-/home/lucas/Documentos/Projects/sem25-1/fcg/Laboratorio_3_Codigo_Fonte/build/CMakeFiles/rebuild_cache.dir

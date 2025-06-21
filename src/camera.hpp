@@ -5,7 +5,6 @@
 #include <glm/gtx/string_cast.hpp>
 #include "glm/ext/vector_float4.hpp"
 #include "glm/geometric.hpp"
-#include "glm/gtx/dual_quaternion.hpp"
 #include "matrices.h"
 
 class Camera {
@@ -17,6 +16,7 @@ class Camera {
   virtual void      setTheta(float theta)               = 0;
   virtual float     getPhi()                            = 0;
   virtual void      setPhi(float phi)                   = 0;
+  virtual glm::vec4 getPosition()                       = 0;
   virtual void      setUsePerspectiveProjection(bool b) = 0;
   virtual float     getScreenRatio()                    = 0;
   virtual void      setScreenRatio(float screenRatio)   = 0;

@@ -1,18 +1,4 @@
-# Ignore everything by default
-*
-
-# But don't ignore directories (needed for negation to work)
-!*/
-
-# Keep src and include directories and their contents
-!src/
-!src/**
-!include/
-!include/**
-
-# Keep the .gitignore file itself
-!.gitignore
-
-# Optionally keep README and documentation files
-!README.md
-!*.md
+bin/**
+.cache/
+CMakeFiles/
+CMakeCache.txt

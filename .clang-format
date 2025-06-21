@@ -1,7 +1,7 @@
 ---
 Language: Cpp
 # Line length
-ColumnLimit: 150
+ColumnLimit: 0
 
 # Indentation
 IndentWidth: 2
@@ -53,7 +53,7 @@ PointerAlignment: Left
 ReferenceAlignment: Left
 
 # Include sorting
-SortIncludes: true
+SortIncludes: false
 IncludeBlocks: Preserve
 
 # Constructor formatting
