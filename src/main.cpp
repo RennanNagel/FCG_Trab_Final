@@ -390,17 +390,17 @@ int main(int argc, char* argv[]) {
   // ComputeNormals(&spheremodel);
   // BuildTrianglesAndAddToVirtualScene(&spheremodel);
   //
-  // ObjModel bunnymodel("../../data/bunny.obj");
-  // ComputeNormals(&bunnymodel);
-  // BuildTrianglesAndAddToVirtualScene(&bunnymodel);
+  ObjModel bunnymodel("../../data/bunny.obj");
+  ComputeNormals(&bunnymodel);
+  BuildTrianglesAndAddToVirtualScene(&bunnymodel);
 
   ObjModel planemodel("../../data/plane.obj");
   ComputeNormals(&planemodel);
   BuildTrianglesAndAddToVirtualScene(&planemodel);
 
-  ObjModel pacmanmodel("../../data/pacman.obj");
-  ComputeNormals(&pacmanmodel);
-  BuildTrianglesAndAddToVirtualScene(&pacmanmodel);
+  // ObjModel pacmanmodel("../../data/pacman.obj");
+  // ComputeNormals(&pacmanmodel);
+  // BuildTrianglesAndAddToVirtualScene(&pacmanmodel);
 
 
   if (argc > 1) {
@@ -436,34 +436,22 @@ int main(int argc, char* argv[]) {
 #define PLANE 2
 #define PACMAN 3
 
-    /// float     r = camera->getDistance();
-    glm::vec4 p = camera->getPosition();
-    float     x = p.x;
-    // float     y = p.y;
-    float z = p.z;
-
-    glm::mat4 model = Matrix_Identity(); // Transformação identidade de modelagem
-                                         //
-    // Desenhamos o modelo da esfera
-    // model = Matrix_Translate(-1.0f, 0.0f, 0.0f) * Matrix_Rotate_Z(0.6f) * Matrix_Rotate_X(0.2f) *
-    //         Matrix_Rotate_Y(g_AngleY + (float) glfwGetTime() * 0.1f);
-    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    // glUniform1i(g_object_id_uniform, SPHERE);
-    // DrawVirtualObject("the_sphere");
+    glm::vec4 p     = camera->getPosition();
+    glm::mat4 model = Matrix_Identity();
 
     // Desenhamos o modelo do coelho
-    // model = Matrix_Translate(1.0f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
-    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    // glUniform1i(g_object_id_uniform, BUNNY);
-    // DrawVirtualObject("the_bunny");
-
-    model = Matrix_Scale(0.01f, 0.01f, 0.01f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
+    model = Matrix_Translate(1.0f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
     glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform1i(g_object_id_uniform, PACMAN);
-    DrawVirtualObject("pacman");
+    glUniform1i(g_object_id_uniform, BUNNY);
+    DrawVirtualObject("the_bunny");
+
+    // model = Matrix_Scale(0.01f, 0.01f, 0.01f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
+    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    // glUniform1i(g_object_id_uniform, PACMAN);
+    // DrawVirtualObject("pacman");
 
     // Desenhamos o plano do chão
-    model = Matrix_Translate(x, -1.0f, z) * Matrix_Scale(100, 1, 100);
+    model = Matrix_Translate(0.0f, -1.1f, 0.0f) * Matrix_Scale(20, 1, 20);
     glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
     glUniform1i(g_object_id_uniform, PLANE);
     DrawVirtualObject("the_plane");
