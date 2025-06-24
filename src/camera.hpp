@@ -273,11 +273,13 @@ class FreeCamera : public Camera {
   }
 
   void MoveForward() {
-    Position -= w * Speed;
+    glm::vec4 forward = glm::normalize(glm::vec4(ViewVector.x, 0.0, ViewVector.z, 0.0));
+    Position += forward * Speed;
   }
 
   void MoveBackward() {
-    Position += w * Speed;
+    glm::vec4 forward = glm::normalize(glm::vec4(ViewVector.x, 0.0, ViewVector.z, 0.0));
+    Position -= forward * Speed;
   }
 
   void MoveLeft() {
@@ -285,11 +287,11 @@ class FreeCamera : public Camera {
   }
 
   void MoveRight() {
-    Position += u * Speed;
+    Position += glm::normalize(crossproduct(ViewVector, UpVector)) * Speed;
   }
 
   void MoveUpwards() {
-    Position += UpVector * Speed;
+    Position -= glm::normalize(crossproduct(ViewVector, UpVector)) * Speed;
   }
 
   void MoveDownwards() {
