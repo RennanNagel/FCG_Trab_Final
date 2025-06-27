@@ -1078,8 +1078,6 @@ void CursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
 
   g_LastCursorPosX = xpos;
   g_LastCursorPosY = ypos;
-
-  printf("%f %f\n", g_CursorDeltaX, g_LastCursorPosY);
 }
 
 // Função callback chamada sempre que o usuário movimenta a "rodinha" do mouse.
