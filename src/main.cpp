@@ -414,6 +414,10 @@ int main(int argc, char* argv[]) {
   ComputeNormals(&planemodel);
   BuildTrianglesAndAddToVirtualScene(&planemodel);
 
+  ObjModel maze("../../data/maze.obj");
+  ComputeNormals(&maze);
+  BuildTrianglesAndAddToVirtualScene(&maze);
+
   // ObjModel pacmanmodel("../../data/pacman.obj");
   // ComputeNormals(&pacmanmodel);
   // BuildTrianglesAndAddToVirtualScene(&pacmanmodel);
@@ -456,7 +460,7 @@ int main(int argc, char* argv[]) {
     glm::mat4 model = Matrix_Identity();
 
     // Desenhamos o modelo do coelho
-    model = Matrix_Translate(1.0f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
+    model = Matrix_Translate(1.1f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
     glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
     glUniform1i(g_object_id_uniform, BUNNY);
     DrawVirtualObject("the_bunny");
@@ -471,6 +475,11 @@ int main(int argc, char* argv[]) {
     glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
     glUniform1i(g_object_id_uniform, PLANE);
     DrawVirtualObject("the_plane");
+
+    model = Matrix_Translate(0.0f, -1.1f, 0.0f);
+    glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    glUniform1i(g_object_id_uniform, PACMAN);
+    DrawVirtualObject("maze");
 
 
     // Imprimimos na tela os ângulos de Euler que controlam a rotação do
