@@ -23,6 +23,7 @@
 #include <map>
 #include <stack>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <limits>
 #include <fstream>
@@ -172,14 +173,29 @@ struct SceneObject {
   tinyobj::material_t              default_material;
 };
 
-// Key state tracking
+
+// Key Stuff definitions
+void processKeys(double currentTime);
+
 struct KeyState {
-  bool   isPressed  = false;
-  double lastTime   = 0.0;
-  double nextRepeat = 0.0;
+  bool   isPressed = false;
+  double lastTime  = 0.0;
 };
 
-std::map<int, KeyState> keys;
+float repeatDelay = 0.1;
+
+std::unordered_map<int, KeyState> keys;
+
+// End key stuff definitions
+
+
+// Variáveis globais que armazenam a última posição do cursor do mouse, para
+// que possamos calcular quanto que o mouse se movimentou entre dois instantes
+// de tempo. Utilizadas no callback CursorPosCallback() abaixo.
+double g_LastCursorPosX, g_LastCursorPosY;
+double g_CursorDeltaX, g_CursorDeltaY;
+
+void processCursor(double xpos, double ypos);
 
 // Abaixo definimos variáveis globais utilizadas em várias funções do código.
 
@@ -475,6 +491,10 @@ int main(int argc, char* argv[]) {
     // tudo que foi renderizado pelas funções acima.
     // Veja o link: https://en.wikipedia.org/w/index.php?title=Multiple_buffering&oldid=793452829#Double_buffering_in_computer_graphics
     glfwSwapBuffers(window);
+
+    double timeNow = glfwGetTime();
+    processCursor(g_LastCursorPosX, g_LastCursorPosY);
+    processKeys(timeNow);
 
     // Verificamos com o sistema operacional se houve alguma interação do
     // usuário (teclado, mouse, ...). Caso positivo, as funções de callback
@@ -981,11 +1001,6 @@ void FramebufferSizeCallback(GLFWwindow* window, int width, int height) {
   camera->setScreenRatio((float) width / height);
 }
 
-// Variáveis globais que armazenam a última posição do cursor do mouse, para
-// que possamos calcular quanto que o mouse se movimentou entre dois instantes
-// de tempo. Utilizadas no callback CursorPosCallback() abaixo.
-double g_LastCursorPosX, g_LastCursorPosY;
-
 // Função callback chamada sempre que o usuário aperta algum dos botões do mouse
 void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
   if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
@@ -1032,46 +1047,39 @@ void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
   }
 }
 
-// Função callback chamada sempre que o usuário movimentar o cursor do mouse em
-// cima da janela OpenGL.
-void CursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
+void processCursor(double xpos, double ypos) {
   if (g_LeftMouseButtonPressed) {
-    float dx = xpos - g_LastCursorPosX;
-    float dy = ypos - g_LastCursorPosY;
-
     float newTheta = camera->getTheta();
-    newTheta += 0.01f * dx;
+    newTheta += 0.01f * g_CursorDeltaX;
     camera->setTheta(newTheta);
 
     float newPhi = camera->getPhi();
-    newPhi -= 0.01f * dy;
+    newPhi -= 0.01f * g_CursorDeltaY;
     camera->setPhi(newPhi);
-
-    g_LastCursorPosX = xpos;
-    g_LastCursorPosY = ypos;
   }
 
   if (g_RightMouseButtonPressed) {
-    float dx = xpos - g_LastCursorPosX;
-    float dy = ypos - g_LastCursorPosY;
-
-    g_ForearmAngleZ -= 0.01f * dx;
-    g_ForearmAngleX += 0.01f * dy;
-
-    g_LastCursorPosX = xpos;
-    g_LastCursorPosY = ypos;
+    g_ForearmAngleZ -= 0.01f * g_CursorDeltaX;
+    g_ForearmAngleX += 0.01f * g_CursorDeltaY;
   }
 
   if (g_MiddleMouseButtonPressed) {
-    float dx = xpos - g_LastCursorPosX;
-    float dy = ypos - g_LastCursorPosY;
-
-    g_TorsoPositionX += 0.01f * dx;
-    g_TorsoPositionY -= 0.01f * dy;
-
-    g_LastCursorPosX = xpos;
-    g_LastCursorPosY = ypos;
+    g_TorsoPositionX += 0.01f * g_CursorDeltaX;
+    g_TorsoPositionY -= 0.01f * g_CursorDeltaY;
   }
+
+  g_CursorDeltaX = 0.0f;
+  g_CursorDeltaY = 0.0f;
+}
+
+void CursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
+  g_CursorDeltaX = xpos - g_LastCursorPosX;
+  g_CursorDeltaY = g_LastCursorPosY - ypos;
+
+  g_LastCursorPosX = xpos;
+  g_LastCursorPosY = ypos;
+
+  printf("%f %f\n", g_CursorDeltaX, g_LastCursorPosY);
 }
 
 // Função callback chamada sempre que o usuário movimenta a "rodinha" do mouse.
@@ -1081,56 +1089,65 @@ void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
   camera->setDistance(newDistance);
 }
 
-// Definição da função que será chamada sempre que o usuário pressionar alguma
-// tecla do teclado. Veja http://www.glfw.org/docs/latest/input_guide.html#input_key
-void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mod) {
-  if (key == GLFW_KEY_C && action == GLFW_PRESS) {
-    float screenRatio = camera->getScreenRatio();
-    camera            = (camera == &freeCamera) ? (Camera*) &sphericCamera : (Camera*) &freeCamera;
-    camera->setScreenRatio(screenRatio);
+void updateKeyState(KeyState& key_state, bool isPressed, double time) {
+  key_state.lastTime  = time;
+  key_state.isPressed = isPressed;
+}
+
+void processKeys(double currentTime) {
+  for (std::unordered_map<int, KeyState>::iterator it = keys.begin(); it != keys.end(); ++it) {
+    int      key       = it->first;
+    KeyState key_state = it->second;
+
+    if (key_state.isPressed) {
+      double& lastTime = key_state.lastTime;
+      if (currentTime - lastTime >= repeatDelay) {
+        if (key == GLFW_KEY_W) {
+          camera->MoveForward();
+        } else if (key == GLFW_KEY_A) {
+          camera->MoveLeft();
+        } else if (key == GLFW_KEY_S) {
+          camera->MoveBackward();
+        } else if (key == GLFW_KEY_D) {
+          camera->MoveRight();
+        }
+
+        lastTime = currentTime;
+      }
+    }
   }
+}
 
-  if (key == GLFW_KEY_Q && action == GLFW_PRESS)
-    glfwSetWindowShouldClose(window, GL_TRUE);
+void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+  if (action == GLFW_PRESS) {
+    keys[key].isPressed = true;
 
-  if (key == GLFW_KEY_W && action == GLFW_PRESS) {
-    camera->MoveForward();
-  }
+    if (key == GLFW_KEY_C && action == GLFW_PRESS) {
+      float screenRatio = camera->getScreenRatio();
+      camera            = (camera == &freeCamera) ? (Camera*) &sphericCamera : (Camera*) &freeCamera;
+      camera->setScreenRatio(screenRatio);
+    }
 
-  if (key == GLFW_KEY_A && action == GLFW_PRESS) {
-    camera->MoveLeft();
-  }
+    if (key == GLFW_KEY_Q && action == GLFW_PRESS)
+      glfwSetWindowShouldClose(window, GL_TRUE);
 
-  if (key == GLFW_KEY_S && action == GLFW_PRESS) {
-    camera->MoveBackward();
-  }
+    // Se o usuário apertar a tecla P, utilizamos projeção perspectiva.
+    if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+      camera->UsePerspectiveProjection = true;
+    }
 
-  if (key == GLFW_KEY_D && action == GLFW_PRESS) {
-    camera->MoveRight();
-  }
+    // Se o usuário apertar a tecla O, utilizamos projeção ortográfica.
+    if (key == GLFW_KEY_O && action == GLFW_PRESS) {
+      camera->UsePerspectiveProjection = false;
+    }
 
-  // Se o usuário apertar a tecla P, utilizamos projeção perspectiva.
-  if (key == GLFW_KEY_P && action == GLFW_PRESS) {
-    camera->UsePerspectiveProjection = true;
-  }
+    // Se o usuário apertar a tecla H, fazemos um "toggle" do texto informativo mostrado na tela.
+    if (key == GLFW_KEY_H && action == GLFW_PRESS) {
+      g_ShowInfoText = !g_ShowInfoText;
+    }
 
-  // Se o usuário apertar a tecla O, utilizamos projeção ortográfica.
-  if (key == GLFW_KEY_O && action == GLFW_PRESS) {
-    camera->UsePerspectiveProjection = false;
-  }
-
-
-  if (key == GLFW_KEY_SPACE && action == GLFW_PRESS && mod != GLFW_MOD_SHIFT) {
-    camera->MoveUpwards();
-  }
-
-  if (key == GLFW_KEY_SPACE && action == GLFW_PRESS && mod == GLFW_MOD_SHIFT) {
-    camera->MoveDownwards();
-  }
-
-  // Se o usuário apertar a tecla H, fazemos um "toggle" do texto informativo mostrado na tela.
-  if (key == GLFW_KEY_H && action == GLFW_PRESS) {
-    g_ShowInfoText = !g_ShowInfoText;
+  } else if (action == GLFW_RELEASE) {
+    keys[key].isPressed = false;
   }
 }
 
