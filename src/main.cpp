@@ -299,6 +299,7 @@ GLint g_kd_uniform;
 GLint g_ka_uniform;
 GLint g_ks_uniform;
 GLint g_q_uniform;
+GLint g_displacement_uniform;
 
 // Camera
 SphericCamera sphericCamera(0.5f,
@@ -400,6 +401,7 @@ int main(int argc, char* argv[]) {
   // Carregamos duas imagens para serem utilizadas como textura
   LoadTextureImage("../../data/plane.png");         // TextureImage0
   LoadTextureImage("../../data/floor_normals.png"); // TextureImage1
+  LoadTextureImage("../../data/maze.jpg");          // TextureImage2
 
   // Construímos a representação de objetos geométricos através de malhas de triângulos
   // ObjModel spheremodel("../../data/sphere.obj");
@@ -455,6 +457,7 @@ int main(int argc, char* argv[]) {
 #define BUNNY 1
 #define PLANE 2
 #define PACMAN 3
+#define MAZE 4
 
     glm::vec4 p     = camera->getPosition();
     glm::mat4 model = Matrix_Identity();
@@ -478,7 +481,8 @@ int main(int argc, char* argv[]) {
 
     model = Matrix_Translate(0.0f, -1.1f, 0.0f);
     glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform1i(g_object_id_uniform, PACMAN);
+    glUniform1i(g_object_id_uniform, MAZE);
+    glUniform1i(g_displacement_uniform, 20.0f);
     DrawVirtualObject("maze");
 
 
@@ -640,16 +644,17 @@ void LoadShadersFromFiles() {
   // Buscamos o endereço das variáveis definidas dentro do Vertex Shader.
   // Utilizaremos estas variáveis para enviar dados para a placa de vídeo
   // (GPU)! Veja arquivo "shader_vertex.glsl" e "shader_fragment.glsl".
-  g_model_uniform      = glGetUniformLocation(g_GpuProgramID, "model");      // Variável da matriz "model"
-  g_view_uniform       = glGetUniformLocation(g_GpuProgramID, "view");       // Variável da matriz "view" em shader_vertex.glsl
-  g_projection_uniform = glGetUniformLocation(g_GpuProgramID, "projection"); // Variável da matriz "projection" em shader_vertex.glsl
-  g_object_id_uniform  = glGetUniformLocation(g_GpuProgramID, "object_id");  // Variável "object_id" em shader_fragment.glsl
-  g_bbox_min_uniform   = glGetUniformLocation(g_GpuProgramID, "bbox_min");
-  g_bbox_max_uniform   = glGetUniformLocation(g_GpuProgramID, "bbox_max");
-  g_kd_uniform         = glGetUniformLocation(g_GpuProgramID, "kd");
-  g_ka_uniform         = glGetUniformLocation(g_GpuProgramID, "ka");
-  g_ks_uniform         = glGetUniformLocation(g_GpuProgramID, "ks");
-  g_q_uniform          = glGetUniformLocation(g_GpuProgramID, "q");
+  g_model_uniform        = glGetUniformLocation(g_GpuProgramID, "model");      // Variável da matriz "model"
+  g_view_uniform         = glGetUniformLocation(g_GpuProgramID, "view");       // Variável da matriz "view" em shader_vertex.glsl
+  g_projection_uniform   = glGetUniformLocation(g_GpuProgramID, "projection"); // Variável da matriz "projection" em shader_vertex.glsl
+  g_object_id_uniform    = glGetUniformLocation(g_GpuProgramID, "object_id");  // Variável "object_id" em shader_fragment.glsl
+  g_bbox_min_uniform     = glGetUniformLocation(g_GpuProgramID, "bbox_min");
+  g_bbox_max_uniform     = glGetUniformLocation(g_GpuProgramID, "bbox_max");
+  g_kd_uniform           = glGetUniformLocation(g_GpuProgramID, "kd");
+  g_ka_uniform           = glGetUniformLocation(g_GpuProgramID, "ka");
+  g_ks_uniform           = glGetUniformLocation(g_GpuProgramID, "ks");
+  g_q_uniform            = glGetUniformLocation(g_GpuProgramID, "q");
+  g_displacement_uniform = glGetUniformLocation(g_GpuProgramID, "displacementScale");
 
 
   // Variáveis em "shader_fragment.glsl" para acesso das imagens de textura

@@ -29,6 +29,7 @@ uniform float q;
 #define BUNNY  1
 #define PLANE  2
 #define PACMAN 3
+#define MAZE 4
 
 uniform int object_id;
 
@@ -81,6 +82,7 @@ void main()
     float U = 0.0;
     float V = 0.0;
     float ao = 1.0;
+    vec3 Kd0 = vec3(0.0, 0.0, 0.0);
 
     if ( object_id == SPHERE )
     {
@@ -93,7 +95,9 @@ void main()
         U = (theta + M_PI)/(2*M_PI);
         V = (phi + M_PI_2)/M_PI;
         ao = texture(TextureImage0, vec2(U, V)).r;
+        Kd0 = texture(TextureImage0, vec2(U,V)).rgb;
     }
+
     else if ( object_id == BUNNY )
     {
         float minx = bbox_min.x;
@@ -107,6 +111,7 @@ void main()
 
         U = (position_model.x - minx) / (maxx - minx);
         V = (position_model.y - miny) / (maxy - miny);
+        Kd0 = texture(TextureImage0, vec2(U,V)).rgb;
     }
 
     else if ( object_id == PLANE )
@@ -115,12 +120,19 @@ void main()
         U = texcoords.x*20;
         V = texcoords.y*20;
         n = vec4(normalize(texture(TextureImage1, vec2(U, V)).rgb), 0.0f);
+        Kd0 = texture(TextureImage0, vec2(U,V)).rgb;
         ao = texture(TextureImage0, vec2(U, V)).r;
     }
 
+    else if ( object_id == MAZE ) 
+    {
+        U = texcoords.x;
+        V = texcoords.y;
+        Kd0 = normalize(texture(TextureImage2, vec2(U, V)).rgb);
+    }
 
     // Obtemos a refletância difusa a partir da leitura da imagem TextureImage0
-    vec3 Kd0 = texture(TextureImage0, vec2(U,V)).rgb;
+    // vec3 Kd0 = texture(TextureImage0, vec2(U,V)).rgb;
 
     // if (object_id == SPHERE) 
     // {
@@ -136,9 +148,9 @@ void main()
 
     // Equação de Iluminação
     float lambert = max(0,dot(n,l));
-
     vec4 r = -l + 2*n*dot(n,l);
-    color.rgb = Kd0 * I * (lambert + 0.01) + ks*I*pow(max(0,dot(r, v)),q);
+
+    color.rgb = Kd0 * I * (lambert + 0.01) + ks*I*pow(max(0,dot(r, v)), q);
 
     // NOTE: Se você quiser fazer o rendering de objetos transparentes, é
     // necessário:
