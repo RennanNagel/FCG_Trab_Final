@@ -2,3 +2,5 @@ bin/**
 .cache/
 CMakeFiles/
 CMakeCache.txt
+.aider*
+.env
