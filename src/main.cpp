@@ -302,6 +302,42 @@ GLint g_ks_uniform;
 GLint g_q_uniform;
 GLint g_displacement_uniform;
 
+// Função para obter AABB transformada por uma matriz
+collision::AABB getTransformedAABB(const SceneObject& obj, const glm::mat4& transform) {
+  collision::AABB transformedAABB;
+
+  // Transformamos os 8 vértices da caixa delimitadora
+  glm::vec3 vertices[8];
+  vertices[0] = glm::vec3(obj.bbox_min.x, obj.bbox_min.y, obj.bbox_min.z); // 000
+  vertices[1] = glm::vec3(obj.bbox_max.x, obj.bbox_min.y, obj.bbox_min.z); // 100
+  vertices[2] = glm::vec3(obj.bbox_min.x, obj.bbox_max.y, obj.bbox_min.z); // 010
+  vertices[3] = glm::vec3(obj.bbox_max.x, obj.bbox_max.y, obj.bbox_min.z); // 110
+  vertices[4] = glm::vec3(obj.bbox_min.x, obj.bbox_min.y, obj.bbox_max.z); // 001
+  vertices[5] = glm::vec3(obj.bbox_max.x, obj.bbox_min.y, obj.bbox_max.z); // 101
+  vertices[6] = glm::vec3(obj.bbox_min.x, obj.bbox_max.y, obj.bbox_max.z); // 011
+  vertices[7] = glm::vec3(obj.bbox_max.x, obj.bbox_max.y, obj.bbox_max.z); // 111
+
+  // Inicializamos com valores extremos
+  transformedAABB.min = glm::vec3(std::numeric_limits<float>::max());
+  transformedAABB.max = glm::vec3(std::numeric_limits<float>::lowest());
+
+  // Transformamos cada vértice e atualizamos min/max
+  for (int i = 0; i < 8; i++) {
+    glm::vec4 transformed = transform * glm::vec4(vertices[i], 1.0f);
+    glm::vec3 v           = glm::vec3(transformed.x, transformed.y, transformed.z);
+
+    transformedAABB.min.x = std::min(transformedAABB.min.x, v.x);
+    transformedAABB.min.y = std::min(transformedAABB.min.y, v.y);
+    transformedAABB.min.z = std::min(transformedAABB.min.z, v.z);
+
+    transformedAABB.max.x = std::max(transformedAABB.max.x, v.x);
+    transformedAABB.max.y = std::max(transformedAABB.max.y, v.y);
+    transformedAABB.max.z = std::max(transformedAABB.max.z, v.z);
+  }
+
+  return transformedAABB;
+}
+
 // Camera
 SphericCamera sphericCamera(3.0f,
                             g_CameraTheta,
@@ -411,9 +447,9 @@ int main(int argc, char* argv[]) {
   // ComputeNormals(&spheremodel);
   // BuildTrianglesAndAddToVirtualScene(&spheremodel);
   //
-  ObjModel bunnymodel("../../data/bunny.obj");
-  ComputeNormals(&bunnymodel);
-  BuildTrianglesAndAddToVirtualScene(&bunnymodel);
+  // ObjModel bunnymodel("../../data/bunny.obj");
+  // ComputeNormals(&bunnymodel);
+  // BuildTrianglesAndAddToVirtualScene(&bunnymodel);
 
   ObjModel planemodel("../../data/plane.obj");
   ComputeNormals(&planemodel);
@@ -422,6 +458,10 @@ int main(int argc, char* argv[]) {
   // ObjModel maze("../../data/maze.obj");
   // ComputeNormals(&maze);
   // BuildTrianglesAndAddToVirtualScene(&maze);
+
+  ObjModel wall("../../data/cube.obj");
+  ComputeNormals(&wall);
+  BuildTrianglesAndAddToVirtualScene(&wall);
 
   // ObjModel pacmanmodel("../../data/pacman.obj");
   // ComputeNormals(&pacmanmodel);
@@ -470,10 +510,10 @@ int main(int argc, char* argv[]) {
     glm::mat4 model = Matrix_Identity();
 
     // Desenhamos o modelo do coelho
-    model = Matrix_Translate(1.1f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + currentFrameTime * 0.1f);
-    glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform1i(g_object_id_uniform, BUNNY);
-    DrawVirtualObject("the_bunny");
+    // model = Matrix_Translate(1.1f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + currentFrameTime * 0.1f);
+    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    // glUniform1i(g_object_id_uniform, BUNNY);
+    // DrawVirtualObject("the_bunny");
 
     // model = Matrix_Scale(0.01f, 0.01f, 0.01f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
     // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
@@ -491,6 +531,28 @@ int main(int argc, char* argv[]) {
     // glUniform1i(g_object_id_uniform, MAZE);
     // glUniform1i(g_displacement_uniform, 20.0f);
     // DrawVirtualObject("maze");
+
+    // Aplicamos a transformação ao modelo, mas mantemos a bounding box original
+    glm::mat4 transform = Matrix_Translate(10.0f, 0.0f, 0.0f) * Matrix_Scale(1.0f, 1.0f, 1.0f);
+    model               = transform;
+
+    // Calculamos a bounding box transformada apenas para visualização
+    collision::AABB transformedAABB = getTransformedAABB(g_VirtualScene["cube"], transform);
+
+    // Enviamos a matriz de modelo para o shader
+    glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    glUniform1i(g_object_id_uniform, PLANE);
+    DrawVirtualObject("cube");
+
+    printf("?\n");
+    printf("bbox_min original: %.2f %.2f %.2f\n", g_VirtualScene["cube"].bbox_min.x,
+           g_VirtualScene["cube"].bbox_min.y, g_VirtualScene["cube"].bbox_min.z);
+    printf("bbox_max original: %.2f %.2f %.2f\n", g_VirtualScene["cube"].bbox_max.x,
+           g_VirtualScene["cube"].bbox_max.y, g_VirtualScene["cube"].bbox_max.z);
+    printf("bbox_min transformada: %.2f %.2f %.2f\n", transformedAABB.min.x,
+           transformedAABB.min.y, transformedAABB.min.z);
+    printf("bbox_max transformada: %.2f %.2f %.2f\n", transformedAABB.max.x,
+           transformedAABB.max.y, transformedAABB.max.z);
 
     glfwSwapBuffers(window);
 
@@ -1111,10 +1173,18 @@ void tryMove(void (*callback)(float deltaTime)) {
   for (const auto& pair : g_VirtualScene) {
     const SceneObject& obj = pair.second;
 
-    // Criar AABB do objeto
+    // Criar AABB do objeto, considerando sua transformação
+    // Por enquanto, apenas para o cubo, podemos expandir para outros objetos depois
     collision::AABB objAABB;
-    objAABB.min = obj.bbox_min;
-    objAABB.max = obj.bbox_max;
+    if (pair.first == "cube") {
+      // Usamos a matriz de transformação específica para o cubo
+      glm::mat4 transform = Matrix_Translate(10.0f, 0.0f, 0.0f) * Matrix_Scale(1.0f, 1.0f, 1.0f);
+      objAABB             = getTransformedAABB(obj, transform);
+    } else {
+      // Para outros objetos, usamos a bounding box original
+      objAABB.min = obj.bbox_min;
+      objAABB.max = obj.bbox_max;
+    }
 
     // Testar colisão entre a câmera (esfera) e o objeto(AABB)
     if (collision::testAABBSphere(objAABB, cameraSphere)) {
