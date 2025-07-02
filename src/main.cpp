@@ -51,6 +51,7 @@
 #include "matrices.h"
 
 #include "camera.hpp"
+#include "collisions.hpp"
 
 #define WIDTH 800
 #define HEIGHT 800
@@ -302,7 +303,7 @@ GLint g_q_uniform;
 GLint g_displacement_uniform;
 
 // Camera
-SphericCamera sphericCamera(0.5f,
+SphericCamera sphericCamera(3.0f,
                             g_CameraTheta,
                             g_CameraPhi,
                             g_CameraDistance,
@@ -314,7 +315,7 @@ SphericCamera sphericCamera(0.5f,
                             (float) WIDTH / HEIGHT,
                             true);
 
-FreeCamera freeCamera(0.5f,
+FreeCamera freeCamera(3.0f,
                       g_CameraTheta,
                       g_CameraPhi,
                       glm::vec4(-10.0f, 0.0f, 0.0f, 1.0f),
@@ -327,6 +328,8 @@ FreeCamera freeCamera(0.5f,
 
 Camera* camera = &freeCamera;
 
+float deltaTime     = 0.0f;
+float lastFrameTime = 0.0f;
 
 int main(int argc, char* argv[]) {
   // Inicializamos a biblioteca GLFW, utilizada para criar uma janela do
@@ -442,6 +445,7 @@ int main(int argc, char* argv[]) {
   glCullFace(GL_BACK);
   glFrontFace(GL_CCW);
 
+
   // Ficamos em um loop infinito, renderizando, até que o usuário feche a janela
   while (!glfwWindowShouldClose(window)) {
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -459,11 +463,14 @@ int main(int argc, char* argv[]) {
 #define PACMAN 3
 #define MAZE 4
 
-    glm::vec4 p     = camera->getPosition();
+    float currentFrameTime = glfwGetTime(); // Time in seconds
+    deltaTime              = currentFrameTime - lastFrameTime;
+    lastFrameTime          = currentFrameTime;
+
     glm::mat4 model = Matrix_Identity();
 
     // Desenhamos o modelo do coelho
-    model = Matrix_Translate(1.1f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
+    model = Matrix_Translate(1.1f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + currentFrameTime * 0.1f);
     glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
     glUniform1i(g_object_id_uniform, BUNNY);
     DrawVirtualObject("the_bunny");
@@ -485,34 +492,11 @@ int main(int argc, char* argv[]) {
     glUniform1i(g_displacement_uniform, 20.0f);
     DrawVirtualObject("maze");
 
-
-    // Imprimimos na tela os ângulos de Euler que controlam a rotação do
-    // terceiro cubo.
-    TextRendering_ShowEulerAngles(window);
-
-    // Imprimimos na informação sobre a matriz de projeção sendo utilizada.
-    TextRendering_ShowProjection(window);
-
-    // Imprimimos na tela informação sobre o número de quadros renderizados
-    // por segundo (frames per second).
-    TextRendering_ShowFramesPerSecond(window);
-
-    // O framebuffer onde OpenGL executa as operações de renderização não
-    // é o mesmo que está sendo mostrado para o usuário, caso contrário
-    // seria possível ver artefatos conhecidos como "screen tearing". A
-    // chamada abaixo faz a troca dos buffers, mostrando para o usuário
-    // tudo que foi renderizado pelas funções acima.
-    // Veja o link: https://en.wikipedia.org/w/index.php?title=Multiple_buffering&oldid=793452829#Double_buffering_in_computer_graphics
     glfwSwapBuffers(window);
 
-    double timeNow = glfwGetTime();
     processCursor(g_LastCursorPosX, g_LastCursorPosY);
-    processKeys(timeNow);
+    processKeys(currentFrameTime);
 
-    // Verificamos com o sistema operacional se houve alguma interação do
-    // usuário (teclado, mouse, ...). Caso positivo, as funções de callback
-    // definidas anteriormente usando glfwSet*Callback() serão chamadas
-    // pela biblioteca GLFW.
     glfwPollEvents();
   }
 
@@ -1115,13 +1099,13 @@ void processKeys(double currentTime) {
       double& lastTime = key_state.lastTime;
       if (currentTime - lastTime >= repeatDelay) {
         if (key == GLFW_KEY_W) {
-          camera->MoveForward();
+          camera->MoveForward(deltaTime);
         } else if (key == GLFW_KEY_A) {
-          camera->MoveLeft();
+          camera->MoveLeft(deltaTime);
         } else if (key == GLFW_KEY_S) {
-          camera->MoveBackward();
+          camera->MoveBackward(deltaTime);
         } else if (key == GLFW_KEY_D) {
-          camera->MoveRight();
+          camera->MoveRight(deltaTime);
         }
 
         lastTime = currentTime;

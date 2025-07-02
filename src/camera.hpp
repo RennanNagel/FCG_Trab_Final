@@ -6,6 +6,7 @@
 #include "glm/ext/vector_float4.hpp"
 #include "glm/geometric.hpp"
 #include "matrices.h"
+#include "collisions.hpp"
 
 class Camera {
   public:
@@ -22,16 +23,20 @@ class Camera {
   virtual void      setScreenRatio(float screenRatio)   = 0;
   virtual void      setDistance(float Distance)         = 0;
   virtual float     getDistance()                       = 0;
-  virtual void      MoveForward()                       = 0;
-  virtual void      MoveBackward()                      = 0;
-  virtual void      MoveLeft()                          = 0;
-  virtual void      MoveRight()                         = 0;
-  virtual void      MoveUpwards()                       = 0;
-  virtual void      MoveDownwards()                     = 0;
+  virtual void      MoveForward(float deltaTime)        = 0;
+  virtual void      MoveBackward(float deltaTime)       = 0;
+  virtual void      MoveLeft(float deltaTime)           = 0;
+  virtual void      MoveRight(float deltaTime)          = 0;
+  virtual void      MoveUpwards(float deltaTime)        = 0;
+  virtual void      MoveDownwards(float deltaTime)      = 0;
+
+  private:
+  float Radius;
 };
 
 class SphericCamera : public Camera {
   private:
+  float Radius;
   float Speed;
   float Theta;    // Ângulo no plano ZX em relação ao eixo Z
   float Phi;      // Ângulo em relação ao eixo Y
@@ -73,6 +78,7 @@ class SphericCamera : public Camera {
                 float     fieldOfView,
                 float     screenRatio,
                 bool      usePerspectiveProjection) {
+    Radius   = 0.1f;
     Speed    = speed;
     Theta    = theta;
     Phi      = phi;
@@ -174,25 +180,34 @@ class SphericCamera : public Camera {
     ScreenRatio = screenRatio;
   }
 
-  void MoveForward() {
-    Position += ViewVector * Speed;
+  void MoveForward(float deltaTime) {
+    Position += ViewVector * Speed * deltaTime;
     setDistance(glm::length(Position - glm::vec4(0.0f, 0.0f, 0.0f, 0.0f)));
   }
 
-  void MoveBackward() {
-    Position -= ViewVector * Speed;
+  void MoveBackward(float deltaTime) {
+    Position -= ViewVector * Speed * deltaTime;
     setDistance(glm::length(Position - glm::vec4(0.0f, 0.0f, 0.0f, 0.0f)));
   }
 
-  void MoveLeft() {}
-  void MoveRight() {}
-  void MoveUpwards() {}
-  void MoveDownwards() {}
+  void MoveLeft(float deltaTime) {
+    (void) deltaTime;
+  }
+  void MoveRight(float deltaTime) {
+    (void) deltaTime;
+  }
+  void MoveUpwards(float deltaTime) {
+    (void) deltaTime;
+  }
+  void MoveDownwards(float deltaTime) {
+    (void) deltaTime;
+  }
 };
 
 
 class FreeCamera : public Camera {
   private:
+  float Radius;
   float Speed;
   float Theta; // Ângulo no plano ZX em relação ao eixo Z
   float Phi;   // Ângulo em relação ao eixo Y
@@ -238,6 +253,7 @@ class FreeCamera : public Camera {
              float     fieldOfView,
              float     screenRatio,
              bool      usePerspectiveProjection) {
+    Radius                   = 0.1f;
     Speed                    = speed;
     Theta                    = theta;
     Phi                      = phi;
@@ -272,30 +288,30 @@ class FreeCamera : public Camera {
     }
   }
 
-  void MoveForward() {
+  void MoveForward(float deltaTime) {
     glm::vec4 forward = glm::normalize(glm::vec4(ViewVector.x, 0.0, ViewVector.z, 0.0));
-    Position += forward * Speed;
+    Position += forward * Speed * deltaTime;
   }
 
-  void MoveBackward() {
+  void MoveBackward(float deltaTime) {
     glm::vec4 forward = glm::normalize(glm::vec4(ViewVector.x, 0.0, ViewVector.z, 0.0));
-    Position -= forward * Speed;
+    Position -= forward * Speed * deltaTime;
   }
 
-  void MoveLeft() {
-    Position -= u * Speed;
+  void MoveLeft(float deltaTime) {
+    Position -= u * Speed * deltaTime;
   }
 
-  void MoveRight() {
-    Position += glm::normalize(crossproduct(ViewVector, UpVector)) * Speed;
+  void MoveRight(float deltaTime) {
+    Position += glm::normalize(crossproduct(ViewVector, UpVector)) * Speed * deltaTime;
   }
 
-  void MoveUpwards() {
-    Position -= glm::normalize(crossproduct(ViewVector, UpVector)) * Speed;
+  void MoveUpwards(float deltaTime) {
+    Position -= glm::normalize(crossproduct(ViewVector, UpVector)) * Speed * deltaTime;
   }
 
-  void MoveDownwards() {
-    Position -= UpVector * Speed;
+  void MoveDownwards(float deltaTime) {
+    Position -= UpVector * Speed * deltaTime;
   }
 
   void setTheta(float theta) {
