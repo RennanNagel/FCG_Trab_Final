@@ -18,6 +18,7 @@ class Camera {
   virtual float     getPhi()                            = 0;
   virtual void      setPhi(float phi)                   = 0;
   virtual glm::vec4 getPosition()                       = 0;
+  virtual void      setPosition(glm::vec4 position)     = 0;
   virtual void      setUsePerspectiveProjection(bool b) = 0;
   virtual float     getScreenRatio()                    = 0;
   virtual void      setScreenRatio(float screenRatio)   = 0;
@@ -202,6 +203,18 @@ class SphericCamera : public Camera {
   void MoveDownwards(float deltaTime) {
     (void) deltaTime;
   }
+
+  void setPosition(glm::vec4 position) {
+    Position = position;
+    Distance = glm::length(Position - LookAt);
+
+    // Recalcular Theta e Phi com base na nova posição
+    glm::vec3 dir = glm::vec3(Position.x - LookAt.x, Position.y - LookAt.y, Position.z - LookAt.z);
+    Phi           = asin(dir.y / Distance);
+    Theta         = atan2(dir.x, dir.z);
+
+    updateViewVector();
+  }
 };
 
 
@@ -313,6 +326,11 @@ class FreeCamera : public Camera {
   void MoveDownwards(float deltaTime) {
     Position -= UpVector * Speed * deltaTime;
   }
+
+  void setPosition(glm::vec4 position) {
+    Position = position;
+  }
+
 
   void setTheta(float theta) {
     Theta = theta;

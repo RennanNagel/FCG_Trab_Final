@@ -419,9 +419,9 @@ int main(int argc, char* argv[]) {
   ComputeNormals(&planemodel);
   BuildTrianglesAndAddToVirtualScene(&planemodel);
 
-  ObjModel maze("../../data/maze.obj");
-  ComputeNormals(&maze);
-  BuildTrianglesAndAddToVirtualScene(&maze);
+  // ObjModel maze("../../data/maze.obj");
+  // ComputeNormals(&maze);
+  // BuildTrianglesAndAddToVirtualScene(&maze);
 
   // ObjModel pacmanmodel("../../data/pacman.obj");
   // ComputeNormals(&pacmanmodel);
@@ -486,11 +486,11 @@ int main(int argc, char* argv[]) {
     glUniform1i(g_object_id_uniform, PLANE);
     DrawVirtualObject("the_plane");
 
-    model = Matrix_Translate(0.0f, -1.1f, 0.0f);
-    glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform1i(g_object_id_uniform, MAZE);
-    glUniform1i(g_displacement_uniform, 20.0f);
-    DrawVirtualObject("maze");
+    // model = Matrix_Translate(0.0f, -1.1f, 0.0f);
+    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    // glUniform1i(g_object_id_uniform, MAZE);
+    // glUniform1i(g_displacement_uniform, 20.0f);
+    // DrawVirtualObject("maze");
 
     glfwSwapBuffers(window);
 
@@ -1090,6 +1090,45 @@ void updateKeyState(KeyState& key_state, bool isPressed, double time) {
   key_state.isPressed = isPressed;
 }
 
+void tryMove(void (*callback)(float deltaTime)) {
+  // Salvar posição atual da câmera antes de mover
+  glm::vec4 oldPosition = camera->getPosition();
+
+  // Tentar mover a câmera
+  callback(deltaTime);
+
+  // Criar uma esfera representando a câmera
+  collision::Sphere cameraSphere;
+  cameraSphere.center =
+      glm::vec3(camera->getPosition().x,
+                camera->getPosition().y,
+                camera->getPosition().z);
+  cameraSphere.radius = 0.1f; // Raio da câmera
+
+  // Verificar colisão com todos os objetos da cena
+
+  bool collision = false;
+  for (const auto& pair : g_VirtualScene) {
+    const SceneObject& obj = pair.second;
+
+    // Criar AABB do objeto
+    collision::AABB objAABB;
+    objAABB.min = obj.bbox_min;
+    objAABB.max = obj.bbox_max;
+
+    // Testar colisão entre a câmera (esfera) e o objeto(AABB)
+    if (collision::testAABBSphere(objAABB, cameraSphere)) {
+      collision = true;
+      break;
+    }
+  }
+
+  // Se houve colisão, restaurar posição anterior
+  if (collision) {
+    camera->setPosition(oldPosition);
+  }
+}
+
 void processKeys(double currentTime) {
   for (std::unordered_map<int, KeyState>::iterator it = keys.begin(); it != keys.end(); ++it) {
     int      key       = it->first;
@@ -1099,13 +1138,13 @@ void processKeys(double currentTime) {
       double& lastTime = key_state.lastTime;
       if (currentTime - lastTime >= repeatDelay) {
         if (key == GLFW_KEY_W) {
-          camera->MoveForward(deltaTime);
+          tryMove([](float dt) { camera->MoveForward(dt); });
         } else if (key == GLFW_KEY_A) {
-          camera->MoveLeft(deltaTime);
+          tryMove([](float dt) { camera->MoveLeft(dt); });
         } else if (key == GLFW_KEY_S) {
-          camera->MoveBackward(deltaTime);
+          tryMove([](float dt) { camera->MoveBackward(dt); });
         } else if (key == GLFW_KEY_D) {
-          camera->MoveRight(deltaTime);
+          tryMove([](float dt) { camera->MoveRight(dt); });
         }
 
         lastTime = currentTime;
