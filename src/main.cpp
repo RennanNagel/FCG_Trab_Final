@@ -28,8 +28,8 @@
 #include <limits>
 #include <fstream>
 #include <sstream>
-#include <stdexcept>
 #include <algorithm>
+#include <iostream>
 
 // Headers das bibliotecas OpenGL
 #include <glad/glad.h>  // Criação de contexto OpenGL 3.3
@@ -51,62 +51,40 @@
 #include "matrices.h"
 
 #include "camera.hpp"
+#include "collisions.hpp"
+#include "maze.hpp"
 
 #define WIDTH 800
 #define HEIGHT 800
 
-// Estrutura que representa um modelo geométrico carregado a partir de um
-// arquivo ".obj". Veja https://en.wikipedia.org/wiki/Wavefront_.obj_file .
-struct ObjModel {
-  tinyobj::attrib_t                attrib;
-  std::vector<tinyobj::shape_t>    shapes;
-  std::vector<tinyobj::material_t> materials;
-
-  // Este construtor lê o modelo de um arquivo utilizando a biblioteca tinyobjloader.
-  // Veja: https://github.com/syoyo/tinyobjloader
-  ObjModel(const char* filename, const char* basepath = NULL, bool triangulate = true) {
-    printf("Carregando objetos do arquivo \"%s\"...\n", filename);
-
-    // Se basepath == NULL, então setamos basepath como o dirname do
-    // filename, para que os arquivos MTL sejam corretamente carregados caso
-    // estejam no mesmo diretório dos arquivos OBJ.
-    std::string fullpath(filename);
-    std::string dirname;
-    if (basepath == NULL) {
-      auto i = fullpath.find_last_of("/");
-      if (i != std::string::npos) {
-        dirname  = fullpath.substr(0, i + 1);
-        basepath = dirname.c_str();
-      }
-    }
-
-    std::string warn;
-    std::string err;
-    bool        ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filename, basepath, triangulate);
-
-    if (!err.empty())
-      fprintf(stderr, "\n%s\n", err.c_str());
-
-    if (!ret)
-      throw std::runtime_error("Erro ao carregar modelo.");
-
-    for (size_t shape = 0; shape < shapes.size(); ++shape) {
-      if (shapes[shape].name.empty()) {
-        fprintf(stderr,
-                "*********************************************\n"
-                "Erro: Objeto sem nome dentro do arquivo '%s'.\n"
-                "Veja https://www.inf.ufrgs.br/~eslgastal/fcg-faq-etc.html#Modelos-3D-no-formato-OBJ .\n"
-                "*********************************************\n",
-                filename);
-        throw std::runtime_error("Objeto sem nome.");
-      }
-      printf("- Objeto '%s'\n", shapes[shape].name.c_str());
-    }
-
-    printf("OK.\n");
-  }
+struct FaceGroup {
+  int                 material_id;
+  std::vector<size_t> face_indices;
 };
 
+struct SceneObject {
+  std::string            name;
+  std::vector<FaceGroup> groups;
+
+  GLenum rendering_mode;
+  GLuint vertex_array_object_id;
+
+  glm::vec3 bbox_min;
+  glm::vec3 bbox_max;
+
+  glm::mat4 transform;
+
+  std::vector<tinyobj::material_t> materials;
+  tinyobj::material_t              default_material;
+};
+
+
+// A cena virtual é uma lista de objetos nomeados, guardados em um dicionário
+// (map).  Veja dentro da função BuildTrianglesAndAddToVirtualScene() como que são incluídos
+// objetos dentro da variável g_VirtualScene, e veja na função main() como
+// estes são acessados.
+std::map<std::string, SceneObject> g_VirtualScene;
+std::map<std::string, SceneObject> g_MazeWall;
 
 // Declaração de funções utilizadas para pilha de matrizes de modelagem.
 void PushMatrix(glm::mat4 M);
@@ -154,26 +132,6 @@ void CursorPosCallback(GLFWwindow* window, double xpos, double ypos);
 void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 
 
-struct FaceGroup {
-  int                 material_id;
-  std::vector<size_t> face_indices;
-};
-
-struct SceneObject {
-  std::string            name;
-  std::vector<FaceGroup> groups;
-
-  GLenum rendering_mode;
-  GLuint vertex_array_object_id;
-
-  glm::vec3 bbox_min;
-  glm::vec3 bbox_max;
-
-  std::vector<tinyobj::material_t> materials;
-  tinyobj::material_t              default_material;
-};
-
-
 // Key Stuff definitions
 void processKeys(double currentTime);
 
@@ -199,11 +157,6 @@ void processCursor(double xpos, double ypos);
 
 // Abaixo definimos variáveis globais utilizadas em várias funções do código.
 
-// A cena virtual é uma lista de objetos nomeados, guardados em um dicionário
-// (map).  Veja dentro da função BuildTrianglesAndAddToVirtualScene() como que são incluídos
-// objetos dentro da variável g_VirtualScene, e veja na função main() como
-// estes são acessados.
-std::map<std::string, SceneObject> g_VirtualScene;
 
 // Pilha que guardará as matrizes de modelagem.
 std::stack<glm::mat4> g_MatrixStack;
@@ -299,9 +252,10 @@ GLint g_kd_uniform;
 GLint g_ka_uniform;
 GLint g_ks_uniform;
 GLint g_q_uniform;
+GLint g_displacement_uniform;
 
 // Camera
-SphericCamera sphericCamera(0.5f,
+SphericCamera sphericCamera(3.0f,
                             g_CameraTheta,
                             g_CameraPhi,
                             g_CameraDistance,
@@ -313,7 +267,7 @@ SphericCamera sphericCamera(0.5f,
                             (float) WIDTH / HEIGHT,
                             true);
 
-FreeCamera freeCamera(0.5f,
+FreeCamera freeCamera(3.0f,
                       g_CameraTheta,
                       g_CameraPhi,
                       glm::vec4(-10.0f, 0.0f, 0.0f, 1.0f),
@@ -326,6 +280,8 @@ FreeCamera freeCamera(0.5f,
 
 Camera* camera = &freeCamera;
 
+float deltaTime     = 0.0f;
+float lastFrameTime = 0.0f;
 
 int main(int argc, char* argv[]) {
   // Inicializamos a biblioteca GLFW, utilizada para criar uma janela do
@@ -400,28 +356,62 @@ int main(int argc, char* argv[]) {
   // Carregamos duas imagens para serem utilizadas como textura
   LoadTextureImage("../../data/plane.png");         // TextureImage0
   LoadTextureImage("../../data/floor_normals.png"); // TextureImage1
+  LoadTextureImage("../../data/maze.jpg");          // TextureImage2
 
   // Construímos a representação de objetos geométricos através de malhas de triângulos
   // ObjModel spheremodel("../../data/sphere.obj");
   // ComputeNormals(&spheremodel);
   // BuildTrianglesAndAddToVirtualScene(&spheremodel);
   //
-  ObjModel bunnymodel("../../data/bunny.obj");
-  ComputeNormals(&bunnymodel);
-  BuildTrianglesAndAddToVirtualScene(&bunnymodel);
+  // ObjModel bunnymodel("../../data/bunny.obj");
+  // ComputeNormals(&bunnymodel);
+  // BuildTrianglesAndAddToVirtualScene(&bunnymodel);
 
   ObjModel planemodel("../../data/plane.obj");
   ComputeNormals(&planemodel);
   BuildTrianglesAndAddToVirtualScene(&planemodel);
+  SceneObject* planeobj = &g_VirtualScene["the_plane"];
+  planeobj->transform   = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f) * Matrix_Scale(20, 1, 20);
+  planeobj->bbox_min    = glm::vec3(planeobj->transform * glm::vec4(planeobj->bbox_min, 1.0f));
+  planeobj->bbox_max    = glm::vec3(planeobj->transform * glm::vec4(planeobj->bbox_max, 1.0f));
 
-  ObjModel maze("../../data/maze.obj");
-  ComputeNormals(&maze);
-  BuildTrianglesAndAddToVirtualScene(&maze);
+  // ObjModel maze("../../data/maze.obj");
+  // ComputeNormals(&maze);
+  // BuildTrianglesAndAddToVirtualScene(&maze);
+
+  ObjModel wall("../../data/cube.obj");
+  ComputeNormals(&wall);
+  BuildTrianglesAndAddToVirtualScene(&wall);
+  SceneObject* wallobj = &g_VirtualScene["cube"];
+  wallobj->transform   = Matrix_Identity() * Matrix_Translate(10.0f, 0.0f, 0.0f) * Matrix_Scale(1.0f, 1.0f, 1.0f);
+  wallobj->bbox_min    = glm::vec3(wallobj->transform * glm::vec4(wallobj->bbox_min, 1.0f));
+  wallobj->bbox_max    = glm::vec3(wallobj->transform * glm::vec4(wallobj->bbox_max, 1.0f));
 
   // ObjModel pacmanmodel("../../data/pacman.obj");
   // ComputeNormals(&pacmanmodel);
   // BuildTrianglesAndAddToVirtualScene(&pacmanmodel);
 
+
+  // Generate the maze
+  MazeGenerator maze(15, 15);
+  maze.generateMaze();
+
+  // Export each wall into a separate ObjModel
+  auto mazeWalls = maze.exportToObjModels();
+
+  for (auto& pair : mazeWalls) {
+    const std::string&         wallName  = pair.first;
+    std::unique_ptr<ObjModel>& wallModel = pair.second;
+
+    // Compute normals (you can skip if you add normals during export)
+    ComputeNormals(wallModel.get());
+
+    // Add to the scene
+    BuildTrianglesAndAddToVirtualScene(wallModel.get());
+  }
+
+  // Guardar nomes das paredes para desenhar depois
+  std::list<std::string> wallNames = maze.getWallNames();
 
   if (argc > 1) {
     ObjModel model(argv[1]);
@@ -440,6 +430,7 @@ int main(int argc, char* argv[]) {
   glCullFace(GL_BACK);
   glFrontFace(GL_CCW);
 
+
   // Ficamos em um loop infinito, renderizando, até que o usuário feche a janela
   while (!glfwWindowShouldClose(window)) {
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -455,15 +446,19 @@ int main(int argc, char* argv[]) {
 #define BUNNY 1
 #define PLANE 2
 #define PACMAN 3
+#define MAZE 4
 
-    glm::vec4 p     = camera->getPosition();
+    float currentFrameTime = glfwGetTime(); // Time in seconds
+    deltaTime              = currentFrameTime - lastFrameTime;
+    lastFrameTime          = currentFrameTime;
+
     glm::mat4 model = Matrix_Identity();
 
     // Desenhamos o modelo do coelho
-    model = Matrix_Translate(1.1f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
-    glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform1i(g_object_id_uniform, BUNNY);
-    DrawVirtualObject("the_bunny");
+    // model = Matrix_Translate(1.1f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + currentFrameTime * 0.1f);
+    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    // glUniform1i(g_object_id_uniform, BUNNY);
+    // DrawVirtualObject("the_bunny");
 
     // model = Matrix_Scale(0.01f, 0.01f, 0.01f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
     // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
@@ -471,44 +466,35 @@ int main(int argc, char* argv[]) {
     // DrawVirtualObject("pacman");
 
     // Desenhamos o plano do chão
-    model = Matrix_Translate(0.0f, -1.1f, 0.0f) * Matrix_Scale(20, 1, 20);
+    model = g_VirtualScene["the_plane"].transform;
     glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
     glUniform1i(g_object_id_uniform, PLANE);
     DrawVirtualObject("the_plane");
 
-    model = Matrix_Translate(0.0f, -1.1f, 0.0f);
+    // model = Matrix_Translate(0.0f, -1.1f, 0.0f);
+    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    // glUniform1i(g_object_id_uniform, MAZE);
+    // glUniform1i(g_displacement_uniform, 20.0f);
+    // DrawVirtualObject("maze");
+
+    model = g_VirtualScene["cube"].transform;
     glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform1i(g_object_id_uniform, PACMAN);
-    DrawVirtualObject("maze");
+    glUniform1i(g_object_id_uniform, PLANE);
+    DrawVirtualObject("cube");
 
+    // Desenhar todas as paredes do labirinto
+    for (const std::string& wallName : wallNames) {
+      model = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f);
+      glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+      glUniform1i(g_object_id_uniform, MAZE);
+      DrawVirtualObject(wallName.c_str());
+    }
 
-    // Imprimimos na tela os ângulos de Euler que controlam a rotação do
-    // terceiro cubo.
-    TextRendering_ShowEulerAngles(window);
-
-    // Imprimimos na informação sobre a matriz de projeção sendo utilizada.
-    TextRendering_ShowProjection(window);
-
-    // Imprimimos na tela informação sobre o número de quadros renderizados
-    // por segundo (frames per second).
-    TextRendering_ShowFramesPerSecond(window);
-
-    // O framebuffer onde OpenGL executa as operações de renderização não
-    // é o mesmo que está sendo mostrado para o usuário, caso contrário
-    // seria possível ver artefatos conhecidos como "screen tearing". A
-    // chamada abaixo faz a troca dos buffers, mostrando para o usuário
-    // tudo que foi renderizado pelas funções acima.
-    // Veja o link: https://en.wikipedia.org/w/index.php?title=Multiple_buffering&oldid=793452829#Double_buffering_in_computer_graphics
     glfwSwapBuffers(window);
 
-    double timeNow = glfwGetTime();
     processCursor(g_LastCursorPosX, g_LastCursorPosY);
-    processKeys(timeNow);
+    processKeys(currentFrameTime);
 
-    // Verificamos com o sistema operacional se houve alguma interação do
-    // usuário (teclado, mouse, ...). Caso positivo, as funções de callback
-    // definidas anteriormente usando glfwSet*Callback() serão chamadas
-    // pela biblioteca GLFW.
     glfwPollEvents();
   }
 
@@ -640,16 +626,17 @@ void LoadShadersFromFiles() {
   // Buscamos o endereço das variáveis definidas dentro do Vertex Shader.
   // Utilizaremos estas variáveis para enviar dados para a placa de vídeo
   // (GPU)! Veja arquivo "shader_vertex.glsl" e "shader_fragment.glsl".
-  g_model_uniform      = glGetUniformLocation(g_GpuProgramID, "model");      // Variável da matriz "model"
-  g_view_uniform       = glGetUniformLocation(g_GpuProgramID, "view");       // Variável da matriz "view" em shader_vertex.glsl
-  g_projection_uniform = glGetUniformLocation(g_GpuProgramID, "projection"); // Variável da matriz "projection" em shader_vertex.glsl
-  g_object_id_uniform  = glGetUniformLocation(g_GpuProgramID, "object_id");  // Variável "object_id" em shader_fragment.glsl
-  g_bbox_min_uniform   = glGetUniformLocation(g_GpuProgramID, "bbox_min");
-  g_bbox_max_uniform   = glGetUniformLocation(g_GpuProgramID, "bbox_max");
-  g_kd_uniform         = glGetUniformLocation(g_GpuProgramID, "kd");
-  g_ka_uniform         = glGetUniformLocation(g_GpuProgramID, "ka");
-  g_ks_uniform         = glGetUniformLocation(g_GpuProgramID, "ks");
-  g_q_uniform          = glGetUniformLocation(g_GpuProgramID, "q");
+  g_model_uniform        = glGetUniformLocation(g_GpuProgramID, "model");      // Variável da matriz "model"
+  g_view_uniform         = glGetUniformLocation(g_GpuProgramID, "view");       // Variável da matriz "view" em shader_vertex.glsl
+  g_projection_uniform   = glGetUniformLocation(g_GpuProgramID, "projection"); // Variável da matriz "projection" em shader_vertex.glsl
+  g_object_id_uniform    = glGetUniformLocation(g_GpuProgramID, "object_id");  // Variável "object_id" em shader_fragment.glsl
+  g_bbox_min_uniform     = glGetUniformLocation(g_GpuProgramID, "bbox_min");
+  g_bbox_max_uniform     = glGetUniformLocation(g_GpuProgramID, "bbox_max");
+  g_kd_uniform           = glGetUniformLocation(g_GpuProgramID, "kd");
+  g_ka_uniform           = glGetUniformLocation(g_GpuProgramID, "ka");
+  g_ks_uniform           = glGetUniformLocation(g_GpuProgramID, "ks");
+  g_q_uniform            = glGetUniformLocation(g_GpuProgramID, "q");
+  g_displacement_uniform = glGetUniformLocation(g_GpuProgramID, "displacementScale");
 
 
   // Variáveis em "shader_fragment.glsl" para acesso das imagens de textura
@@ -1101,6 +1088,45 @@ void updateKeyState(KeyState& key_state, bool isPressed, double time) {
   key_state.isPressed = isPressed;
 }
 
+void tryMove(void (*callback)(float deltaTime)) {
+  // Salvar posição atual da câmera antes de mover
+  glm::vec4 oldPosition = camera->getPosition();
+
+  // Tentar mover a câmera
+  callback(deltaTime);
+
+  // Criar uma esfera representando a câmera
+  collision::Sphere cameraSphere;
+  cameraSphere.center =
+      glm::vec3(camera->getPosition().x,
+                camera->getPosition().y,
+                camera->getPosition().z);
+  cameraSphere.radius = 0.1f; // Raio da câmera
+
+  // Verificar colisão com todos os objetos da cena
+
+  bool collision = false;
+  for (const auto& pair : g_VirtualScene) {
+    const SceneObject& obj = pair.second;
+
+    // Criar AABB do objeto
+    collision::AABB objAABB;
+    objAABB.min = obj.bbox_min;
+    objAABB.max = obj.bbox_max;
+
+    // Testar colisão entre a câmera (esfera) e o objeto(AABB)
+    if (collision::testAABBSphere(objAABB, cameraSphere)) {
+      collision = true;
+      break;
+    }
+  }
+
+  // Se houve colisão, restaurar posição anterior
+  if (collision) {
+    camera->setPosition(oldPosition);
+  }
+}
+
 void processKeys(double currentTime) {
   for (std::unordered_map<int, KeyState>::iterator it = keys.begin(); it != keys.end(); ++it) {
     int      key       = it->first;
@@ -1110,13 +1136,13 @@ void processKeys(double currentTime) {
       double& lastTime = key_state.lastTime;
       if (currentTime - lastTime >= repeatDelay) {
         if (key == GLFW_KEY_W) {
-          camera->MoveForward();
+          tryMove([](float dt) { camera->MoveForward(dt); });
         } else if (key == GLFW_KEY_A) {
-          camera->MoveLeft();
+          tryMove([](float dt) { camera->MoveLeft(dt); });
         } else if (key == GLFW_KEY_S) {
-          camera->MoveBackward();
+          tryMove([](float dt) { camera->MoveBackward(dt); });
         } else if (key == GLFW_KEY_D) {
-          camera->MoveRight();
+          tryMove([](float dt) { camera->MoveRight(dt); });
         }
 
         lastTime = currentTime;

@@ -1,0 +1,9 @@
+# Material for the cube.obj
+
+newmtl Material
+Ka 1.000 1.000 1.000      # Ambient color
+Kd 1.000 1.000 1.000      # Diffuse color
+Ks 0.000 0.000 0.000      # Specular color
+Ns 10.0                  # Shininess
+d 1.0                    # Opacity
+illum 1                 # Illumination model: diffuse + specular
