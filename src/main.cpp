@@ -28,7 +28,6 @@
 #include <limits>
 #include <fstream>
 #include <sstream>
-#include <stdexcept>
 #include <algorithm>
 #include <iostream>
 
@@ -58,6 +57,34 @@
 #define WIDTH 800
 #define HEIGHT 800
 
+struct FaceGroup {
+  int                 material_id;
+  std::vector<size_t> face_indices;
+};
+
+struct SceneObject {
+  std::string            name;
+  std::vector<FaceGroup> groups;
+
+  GLenum rendering_mode;
+  GLuint vertex_array_object_id;
+
+  glm::vec3 bbox_min;
+  glm::vec3 bbox_max;
+
+  glm::mat4 transform;
+
+  std::vector<tinyobj::material_t> materials;
+  tinyobj::material_t              default_material;
+};
+
+
+// A cena virtual é uma lista de objetos nomeados, guardados em um dicionário
+// (map).  Veja dentro da função BuildTrianglesAndAddToVirtualScene() como que são incluídos
+// objetos dentro da variável g_VirtualScene, e veja na função main() como
+// estes são acessados.
+std::map<std::string, SceneObject> g_VirtualScene;
+std::map<std::string, SceneObject> g_MazeWall;
 
 // Declaração de funções utilizadas para pilha de matrizes de modelagem.
 void PushMatrix(glm::mat4 M);
@@ -105,28 +132,6 @@ void CursorPosCallback(GLFWwindow* window, double xpos, double ypos);
 void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 
 
-struct FaceGroup {
-  int                 material_id;
-  std::vector<size_t> face_indices;
-};
-
-struct SceneObject {
-  std::string            name;
-  std::vector<FaceGroup> groups;
-
-  GLenum rendering_mode;
-  GLuint vertex_array_object_id;
-
-  glm::vec3 bbox_min;
-  glm::vec3 bbox_max;
-
-  glm::mat4 transform;
-
-  std::vector<tinyobj::material_t> materials;
-  tinyobj::material_t              default_material;
-};
-
-
 // Key Stuff definitions
 void processKeys(double currentTime);
 
@@ -152,11 +157,6 @@ void processCursor(double xpos, double ypos);
 
 // Abaixo definimos variáveis globais utilizadas em várias funções do código.
 
-// A cena virtual é uma lista de objetos nomeados, guardados em um dicionário
-// (map).  Veja dentro da função BuildTrianglesAndAddToVirtualScene() como que são incluídos
-// objetos dentro da variável g_VirtualScene, e veja na função main() como
-// estes são acessados.
-std::map<std::string, SceneObject> g_VirtualScene;
 
 // Pilha que guardará as matrizes de modelagem.
 std::stack<glm::mat4> g_MatrixStack;
@@ -392,11 +392,23 @@ int main(int argc, char* argv[]) {
   // BuildTrianglesAndAddToVirtualScene(&pacmanmodel);
 
 
+  // Generate the maze
   MazeGenerator maze(15, 15);
   maze.generateMaze();
-  auto mazeModel = maze.exportToObjModel();
-  ComputeNormals(mazeModel.get());
-  BuildTrianglesAndAddToVirtualScene(mazeModel.get());
+
+  // Export each wall into a separate ObjModel
+  auto mazeWalls = maze.exportToObjModels();
+
+  for (auto& pair : mazeWalls) {
+    const std::string&         wallName  = pair.first;
+    std::unique_ptr<ObjModel>& wallModel = pair.second;
+
+    // Compute normals (you can skip if you add normals during export)
+    ComputeNormals(wallModel.get());
+
+    // Add to the scene
+    BuildTrianglesAndAddToVirtualScene(wallModel.get());
+  }
 
   // Guardar nomes das paredes para desenhar depois
   std::list<std::string> wallNames = maze.getWallNames();

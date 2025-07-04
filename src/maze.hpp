@@ -7,15 +7,18 @@
 #include <iostream>
 #include <memory>
 #include <list>
+#include <fstream>
 #include <tiny_obj_loader.h>
 
+
+using namespace std;
 
 // Estrutura que representa um modelo geométrico carregado a partir de um
 // arquivo ".obj". Veja https://en.wikipedia.org/wiki/Wavefront_.obj_file .
 struct ObjModel {
-  tinyobj::attrib_t                attrib;
-  std::vector<tinyobj::shape_t>    shapes;
-  std::vector<tinyobj::material_t> materials;
+  tinyobj::attrib_t           attrib;
+  vector<tinyobj::shape_t>    shapes;
+  vector<tinyobj::material_t> materials;
 
   // Construtor vazio para criação programática
   ObjModel() = default;
@@ -28,25 +31,25 @@ struct ObjModel {
     // Se basepath == NULL, então setamos basepath como o dirname do
     // filename, para que os arquivos MTL sejam corretamente carregados caso
     // estejam no mesmo diretório dos arquivos OBJ.
-    std::string fullpath(filename);
-    std::string dirname;
+    string fullpath(filename);
+    string dirname;
     if (basepath == NULL) {
       auto i = fullpath.find_last_of("/");
-      if (i != std::string::npos) {
+      if (i != string::npos) {
         dirname  = fullpath.substr(0, i + 1);
         basepath = dirname.c_str();
       }
     }
 
-    std::string warn;
-    std::string err;
-    bool        ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filename, basepath, triangulate);
+    string warn;
+    string err;
+    bool   ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filename, basepath, triangulate);
 
     if (!err.empty())
       fprintf(stderr, "\n%s\n", err.c_str());
 
     if (!ret)
-      throw std::runtime_error("Erro ao carregar modelo.");
+      throw runtime_error("Erro ao carregar modelo.");
 
     for (size_t shape = 0; shape < shapes.size(); ++shape) {
       if (shapes[shape].name.empty()) {
@@ -56,7 +59,7 @@ struct ObjModel {
                 "Veja https://www.inf.ufrgs.br/~eslgastal/fcg-faq-etc.html#Modelos-3D-no-formato-OBJ .\n"
                 "*********************************************\n",
                 filename);
-        throw std::runtime_error("Objeto sem nome.");
+        throw runtime_error("Objeto sem nome.");
       }
       printf("- Objeto '%s'\n", shapes[shape].name.c_str());
     }
@@ -80,20 +83,20 @@ class MazeGenerator {
     int   id;
   };
 
-  int                            width, height;
-  std::vector<std::vector<Cell>> grid;
-  std::list<Wall>                walls;
-  std::mt19937                   rng;
-  int                            wallCounter = 0;
+  int                  width, height;
+  vector<vector<Cell>> grid;
+  list<Wall>           walls;
+  mt19937              rng;
+  int                  wallCounter = 0;
 
   // Direções: Norte, Sul, Leste, Oeste
   const int dx[4] = {0, 0, 1, -1};
   const int dy[4] = {-1, 1, 0, 0};
 
   public:
-  MazeGenerator(int w, int h, unsigned int seed = std::random_device{}())
+  MazeGenerator(int w, int h, unsigned int seed = random_device{}())
       : width(w), height(h), rng(seed) {
-    grid.resize(height, std::vector<Cell>(width));
+    grid.resize(height, vector<Cell>(width));
     initializeGrid();
   }
 
@@ -108,7 +111,7 @@ class MazeGenerator {
 
   void generateMaze() {
     // Algoritmo de geração usando DFS recursivo com backtracking
-    std::vector<std::pair<int, int>> stack;
+    vector<pair<int, int>> stack;
 
     // Começar do centro
     int startX = width / 2;
@@ -120,7 +123,7 @@ class MazeGenerator {
     while (!stack.empty()) {
       auto [currentX, currentY] = stack.back();
 
-      std::vector<int> neighbors;
+      vector<int> neighbors;
 
       // Encontrar vizinhos não visitados
       for (int dir = 0; dir < 4; dir++) {
@@ -258,146 +261,131 @@ class MazeGenerator {
   }
 
   // Função principal: exporta diretamente para ObjModel
-  std::unique_ptr<ObjModel> exportToObjModel() {
-    auto objModel = std::unique_ptr<ObjModel>(new ObjModel());
-
-    // Limpar dados
-    objModel->attrib.vertices.clear();
-    objModel->attrib.normals.clear();
-    objModel->attrib.texcoords.clear();
-    objModel->shapes.clear();
-    objModel->materials.clear();
-
-    // Criar material padrão para as paredes
-    tinyobj::material_t wallMaterial;
-    wallMaterial.name        = "wall_material";
-    wallMaterial.ambient[0]  = 0.3f;
-    wallMaterial.ambient[1]  = 0.3f;
-    wallMaterial.ambient[2]  = 0.3f;
-    wallMaterial.diffuse[0]  = 0.8f;
-    wallMaterial.diffuse[1]  = 0.8f;
-    wallMaterial.diffuse[2]  = 0.8f;
-    wallMaterial.specular[0] = 0.1f;
-    wallMaterial.specular[1] = 0.1f;
-    wallMaterial.specular[2] = 0.1f;
-    wallMaterial.shininess   = 10.0f;
-    wallMaterial.dissolve    = 1.0f;
-    objModel->materials.push_back(wallMaterial);
+  map<string, unique_ptr<ObjModel>> exportToObjModels() {
+    map<string, unique_ptr<ObjModel>> wallModels;
 
     for (const auto& wall : walls) {
-      // Criar shape para cada parede
+      auto objModel = unique_ptr<ObjModel>(new ObjModel());
+
+      // Material para as paredes
+      tinyobj::material_t material;
+      material.name = "wall_material";
+      
+      // Propriedades do material
+      material.ambient[0] = 0.2f;
+      material.ambient[1] = 0.2f;
+      material.ambient[2] = 0.2f;
+      
+      material.diffuse[0] = 0.8f;
+      material.diffuse[1] = 0.8f;
+      material.diffuse[2] = 0.8f;
+      
+      material.specular[0] = 0.1f;
+      material.specular[1] = 0.1f;
+      material.specular[2] = 0.1f;
+      
+      material.shininess = 32.0f;
+      material.dissolve = 1.0f;
+      
+      objModel->materials.push_back(material);
+
       tinyobj::shape_t shape;
-      shape.name = "wall_" + std::to_string(wall.id);
+      shape.name = "wall_" + to_string(wall.id);
 
-      // Calcular dimensões da parede
-      float halfWidth  = wall.width / 2.0f;
-      float halfHeight = wall.height / 2.0f;
-      float halfDepth  = wall.depth / 2.0f;
+      float hw = wall.width * 0.5f;
+      float hh = wall.height * 0.5f;
+      float hd = wall.depth * 0.5f;
 
-      // Índice base para os vértices desta parede
-      size_t baseVertexIndex = objModel->attrib.vertices.size() / 3;
+      // Vertices do cubo
+      vector<float> vertices = {
+          wall.x - hw, wall.y - hh, wall.z - hd,  // 0
+          wall.x + hw, wall.y - hh, wall.z - hd,  // 1
+          wall.x + hw, wall.y + hh, wall.z - hd,  // 2
+          wall.x - hw, wall.y + hh, wall.z - hd,  // 3
+          wall.x - hw, wall.y - hh, wall.z + hd,  // 4
+          wall.x + hw, wall.y - hh, wall.z + hd,  // 5
+          wall.x + hw, wall.y + hh, wall.z + hd,  // 6
+          wall.x - hw, wall.y + hh, wall.z + hd   // 7
+      };
+      objModel->attrib.vertices.insert(objModel->attrib.vertices.end(), vertices.begin(), vertices.end());
 
-      // Adicionar os 8 vértices do cubo
-      std::vector<float> cubeVertices = {
-          // Vértice 0: (-x, -y, -z)
-          wall.x - halfWidth, wall.y - halfHeight, wall.z - halfDepth,
-          // Vértice 1: (+x, -y, -z)
-          wall.x + halfWidth, wall.y - halfHeight, wall.z - halfDepth,
-          // Vértice 2: (+x, +y, -z)
-          wall.x + halfWidth, wall.y + halfHeight, wall.z - halfDepth,
-          // Vértice 3: (-x, +y, -z)
-          wall.x - halfWidth, wall.y + halfHeight, wall.z - halfDepth,
-          // Vértice 4: (-x, -y, +z)
-          wall.x - halfWidth, wall.y - halfHeight, wall.z + halfDepth,
-          // Vértice 5: (+x, -y, +z)
-          wall.x + halfWidth, wall.y - halfHeight, wall.z + halfDepth,
-          // Vértice 6: (+x, +y, +z)
-          wall.x + halfWidth, wall.y + halfHeight, wall.z + halfDepth,
-          // Vértice 7: (-x, +y, +z)
-          wall.x - halfWidth, wall.y + halfHeight, wall.z + halfDepth};
+      // Normais para cada face do cubo
+      vector<float> normals = {
+          // Face frontal (z-)
+          0.0f, 0.0f, -1.0f,  0.0f, 0.0f, -1.0f,  0.0f, 0.0f, -1.0f,  0.0f, 0.0f, -1.0f,
+          // Face traseira (z+)
+          0.0f, 0.0f, 1.0f,   0.0f, 0.0f, 1.0f,   0.0f, 0.0f, 1.0f,   0.0f, 0.0f, 1.0f,
+          // Face esquerda (x-)
+          -1.0f, 0.0f, 0.0f,  -1.0f, 0.0f, 0.0f,  -1.0f, 0.0f, 0.0f,  -1.0f, 0.0f, 0.0f,
+          // Face direita (x+)
+          1.0f, 0.0f, 0.0f,   1.0f, 0.0f, 0.0f,   1.0f, 0.0f, 0.0f,   1.0f, 0.0f, 0.0f,
+          // Face inferior (y-)
+          0.0f, -1.0f, 0.0f,  0.0f, -1.0f, 0.0f,  0.0f, -1.0f, 0.0f,  0.0f, -1.0f, 0.0f,
+          // Face superior (y+)
+          0.0f, 1.0f, 0.0f,   0.0f, 1.0f, 0.0f,   0.0f, 1.0f, 0.0f,   0.0f, 1.0f, 0.0f
+      };
+      objModel->attrib.normals.insert(objModel->attrib.normals.end(), normals.begin(), normals.end());
 
-      // Adicionar vértices ao attrib
-      objModel->attrib.vertices.insert(objModel->attrib.vertices.end(), cubeVertices.begin(), cubeVertices.end());
+      // Coordenadas de textura corrigidas para orientação consistente
+      vector<float> texcoords = {
+          // Face frontal (z-) - vértices 0,3,2,1
+          0.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f,  1.0f, 0.0f,
+          // Face traseira (z+) - vértices 4,5,6,7
+          1.0f, 0.0f,  0.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f,
+          // Face esquerda (x-) - vértices 0,4,7,3
+          1.0f, 0.0f,  0.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f,
+          // Face direita (x+) - vértices 2,6,5,1
+          0.0f, 1.0f,  1.0f, 1.0f,  1.0f, 0.0f,  0.0f, 0.0f,
+          // Face inferior (y-) - vértices 0,1,5,4
+          0.0f, 1.0f,  1.0f, 1.0f,  1.0f, 0.0f,  0.0f, 0.0f,
+          // Face superior (y+) - vértices 7,6,2,3
+          0.0f, 0.0f,  1.0f, 0.0f,  1.0f, 1.0f,  0.0f, 1.0f
+      };
+      objModel->attrib.texcoords.insert(objModel->attrib.texcoords.end(), texcoords.begin(), texcoords.end());
 
-      // Adicionar normais para as faces
-      std::vector<float> cubeNormals = {
-          // 8 vértices, cada um com normal (0,0,-1) para face frontal
-          0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f,
-          0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f};
-      objModel->attrib.normals.insert(objModel->attrib.normals.end(), cubeNormals.begin(), cubeNormals.end());
+      // Faces do cubo com ordem correta para normais apontando para fora
+      const int faces[6][4] = {
+          {0, 3, 2, 1},   // Face frontal (z-) - ordem anti-horária
+          {4, 5, 6, 7},   // Face traseira (z+) - ordem anti-horária  
+          {0, 4, 7, 3},   // Face esquerda (x-) - ordem anti-horária
+          {2, 6, 5, 1},   // Face direita (x+) - ordem anti-horária
+          {0, 1, 5, 4},   // Face inferior (y-) - ordem anti-horária
+          {7, 6, 2, 3}    // Face superior (y+) - ordem anti-horária
+      };
 
-      // Adicionar coordenadas de textura básicas
-      std::vector<float> cubeTexCoords = {
-          0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f,
-          0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f};
-      objModel->attrib.texcoords.insert(objModel->attrib.texcoords.end(), cubeTexCoords.begin(), cubeTexCoords.end());
+      for (int f = 0; f < 6; ++f) {
+        int v0 = faces[f][0];
+        int v1 = faces[f][1];
+        int v2 = faces[f][2];
+        int v3 = faces[f][3];
 
-      // Definir índices das faces do cubo (12 triângulos)
-      std::vector<tinyobj::index_t> cubeIndices;
+        // Índices das normais e texturas para cada face
+        int n_base = f * 4;  // 4 normais por face
+        int t_base = f * 4;  // 4 coordenadas de textura por face
 
-      // Face frontal (2 triângulos)
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 0), static_cast<int>(baseVertexIndex + 0), static_cast<int>(baseVertexIndex + 0)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 1), static_cast<int>(baseVertexIndex + 1), static_cast<int>(baseVertexIndex + 1)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 2), static_cast<int>(baseVertexIndex + 2), static_cast<int>(baseVertexIndex + 2)});
+        // Primeiro triângulo da face (ordem anti-horária)
+        shape.mesh.indices.push_back({v0, t_base + 0, n_base + 0});
+        shape.mesh.indices.push_back({v1, t_base + 1, n_base + 1});
+        shape.mesh.indices.push_back({v2, t_base + 2, n_base + 2});
 
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 0), static_cast<int>(baseVertexIndex + 0), static_cast<int>(baseVertexIndex + 0)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 2), static_cast<int>(baseVertexIndex + 2), static_cast<int>(baseVertexIndex + 2)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 3), static_cast<int>(baseVertexIndex + 3), static_cast<int>(baseVertexIndex + 3)});
+        // Segundo triângulo da face (ordem anti-horária)
+        shape.mesh.indices.push_back({v0, t_base + 0, n_base + 0});
+        shape.mesh.indices.push_back({v2, t_base + 2, n_base + 2});
+        shape.mesh.indices.push_back({v3, t_base + 3, n_base + 3});
 
-      // Face traseira (2 triângulos)
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 4), static_cast<int>(baseVertexIndex + 4), static_cast<int>(baseVertexIndex + 4)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 7), static_cast<int>(baseVertexIndex + 7), static_cast<int>(baseVertexIndex + 7)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 6), static_cast<int>(baseVertexIndex + 6), static_cast<int>(baseVertexIndex + 6)});
-
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 4), static_cast<int>(baseVertexIndex + 4), static_cast<int>(baseVertexIndex + 4)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 6), static_cast<int>(baseVertexIndex + 6), static_cast<int>(baseVertexIndex + 6)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 5), static_cast<int>(baseVertexIndex + 5), static_cast<int>(baseVertexIndex + 5)});
-
-      // Face esquerda (2 triângulos)
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 0), static_cast<int>(baseVertexIndex + 0), static_cast<int>(baseVertexIndex + 0)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 4), static_cast<int>(baseVertexIndex + 4), static_cast<int>(baseVertexIndex + 4)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 5), static_cast<int>(baseVertexIndex + 5), static_cast<int>(baseVertexIndex + 5)});
-
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 0), static_cast<int>(baseVertexIndex + 0), static_cast<int>(baseVertexIndex + 0)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 5), static_cast<int>(baseVertexIndex + 5), static_cast<int>(baseVertexIndex + 5)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 1), static_cast<int>(baseVertexIndex + 1), static_cast<int>(baseVertexIndex + 1)});
-
-      // Face direita (2 triângulos)
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 2), static_cast<int>(baseVertexIndex + 2), static_cast<int>(baseVertexIndex + 2)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 6), static_cast<int>(baseVertexIndex + 6), static_cast<int>(baseVertexIndex + 6)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 7), static_cast<int>(baseVertexIndex + 7), static_cast<int>(baseVertexIndex + 7)});
-
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 2), static_cast<int>(baseVertexIndex + 2), static_cast<int>(baseVertexIndex + 2)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 7), static_cast<int>(baseVertexIndex + 7), static_cast<int>(baseVertexIndex + 7)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 3), static_cast<int>(baseVertexIndex + 3), static_cast<int>(baseVertexIndex + 3)});
-
-      // Face superior (2 triângulos)
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 3), static_cast<int>(baseVertexIndex + 3), static_cast<int>(baseVertexIndex + 3)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 7), static_cast<int>(baseVertexIndex + 7), static_cast<int>(baseVertexIndex + 7)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 6), static_cast<int>(baseVertexIndex + 6), static_cast<int>(baseVertexIndex + 6)});
-
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 3), static_cast<int>(baseVertexIndex + 3), static_cast<int>(baseVertexIndex + 3)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 6), static_cast<int>(baseVertexIndex + 6), static_cast<int>(baseVertexIndex + 6)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 2), static_cast<int>(baseVertexIndex + 2), static_cast<int>(baseVertexIndex + 2)});
-
-      // Face inferior (2 triângulos)
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 0), static_cast<int>(baseVertexIndex + 0), static_cast<int>(baseVertexIndex + 0)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 1), static_cast<int>(baseVertexIndex + 1), static_cast<int>(baseVertexIndex + 1)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 5), static_cast<int>(baseVertexIndex + 5), static_cast<int>(baseVertexIndex + 5)});
-
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 0), static_cast<int>(baseVertexIndex + 0), static_cast<int>(baseVertexIndex + 0)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 5), static_cast<int>(baseVertexIndex + 5), static_cast<int>(baseVertexIndex + 5)});
-      cubeIndices.push_back({static_cast<int>(baseVertexIndex + 4), static_cast<int>(baseVertexIndex + 4), static_cast<int>(baseVertexIndex + 4)});
-
-      // Configurar mesh da parede
-      shape.mesh.indices = cubeIndices;
-      shape.mesh.num_face_vertices.resize(12, 3); // 12 triângulos, 3 vértices cada
-      shape.mesh.material_ids.resize(12, 0);      // Usar material 0 (wall_material)
+        shape.mesh.num_face_vertices.push_back(3);
+        shape.mesh.num_face_vertices.push_back(3);
+        shape.mesh.material_ids.push_back(0);
+        shape.mesh.material_ids.push_back(0);
+      }
 
       objModel->shapes.push_back(shape);
+
+      string wallName      = "wall_" + to_string(wall.id);
+      wallModels[wallName] = std::move(objModel);
     }
 
-    return objModel;
+    return wallModels;
   }
 
   int getWallCount() const {
@@ -405,19 +393,88 @@ class MazeGenerator {
   }
 
   // Função para obter lista de nomes das paredes
-  std::list<std::string> getWallNames() const {
-    std::list<std::string> wallNames;
+  list<string> getWallNames() const {
+    list<string> wallNames;
     for (const auto& wall : walls) {
-      wallNames.push_back("wall_" + std::to_string(wall.id));
+      wallNames.push_back("wall_" + to_string(wall.id));
     }
     return wallNames;
   }
 
   void printMazeInfo() const {
-    std::cout << "Labirinto gerado:\n";
-    std::cout << "Dimensões: " << width << "x" << height << "\n";
-    std::cout << "Número de paredes: " << walls.size() << "\n";
-    std::cout << "Múltiplas entradas e saídas criadas\n";
+    cout << "Labirinto gerado:\n";
+    cout << "Dimensões: " << width << "x" << height << "\n";
+    cout << "Número de paredes: " << walls.size() << "\n";
+    cout << "Múltiplas entradas e saídas criadas\n";
+  }
+
+  // Função para salvar o labirinto como imagem PPM
+  void saveToPPM(const string& filename) const {
+    ofstream file(filename);
+    if (!file.is_open()) {
+      cerr << "Erro: Não foi possível abrir o arquivo " << filename << " para escrita.\n";
+      return;
+    }
+
+    // Calcular dimensões da imagem (cada célula = 10x10 pixels)
+    const int cellPixels  = 10;
+    const int imageWidth  = width * cellPixels;
+    const int imageHeight = height * cellPixels;
+
+    // Escrever cabeçalho PPM
+    file << "P3\n";
+    file << imageWidth << " " << imageHeight << "\n";
+    file << "255\n";
+
+    // Cores
+    const int wallColor[3] = {0, 0, 0};       // Preto para paredes
+    const int pathColor[3] = {255, 255, 255}; // Branco para caminhos
+
+    // Gerar imagem pixel por pixel
+    for (int y = 0; y < imageHeight; y++) {
+      for (int x = 0; x < imageWidth; x++) {
+        // Determinar qual célula do grid corresponde a este pixel
+        int cellX = x / cellPixels;
+        int cellY = y / cellPixels;
+
+        // Posição dentro da célula (0-9)
+        int pixelX = x % cellPixels;
+        int pixelY = y % cellPixels;
+
+        bool isWall = false;
+
+        // Verificar se estamos numa borda de parede
+        if (cellX < width && cellY < height) {
+          // Parede norte (topo da célula)
+          if (pixelY == 0 && grid[cellY][cellX].walls[0]) {
+            isWall = true;
+          }
+          // Parede sul (fundo da célula)
+          else if (pixelY == cellPixels - 1 && grid[cellY][cellX].walls[1]) {
+            isWall = true;
+          }
+          // Parede oeste (esquerda da célula)
+          else if (pixelX == 0 && grid[cellY][cellX].walls[3]) {
+            isWall = true;
+          }
+          // Parede leste (direita da célula)
+          else if (pixelX == cellPixels - 1 && grid[cellY][cellX].walls[2]) {
+            isWall = true;
+          }
+        }
+
+        // Escrever cor do pixel
+        if (isWall) {
+          file << wallColor[0] << " " << wallColor[1] << " " << wallColor[2] << " ";
+        } else {
+          file << pathColor[0] << " " << pathColor[1] << " " << pathColor[2] << " ";
+        }
+      }
+      file << "\n";
+    }
+
+    file.close();
+    cout << "Labirinto salvo como " << filename << "\n";
   }
 
   private:
