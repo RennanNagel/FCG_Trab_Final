@@ -30,6 +30,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <algorithm>
+#include <iostream>
 
 // Headers das bibliotecas OpenGL
 #include <glad/glad.h>  // Criação de contexto OpenGL 3.3
@@ -170,6 +171,8 @@ struct SceneObject {
   glm::vec3 bbox_min;
   glm::vec3 bbox_max;
 
+  glm::mat4 transform;
+
   std::vector<tinyobj::material_t> materials;
   tinyobj::material_t              default_material;
 };
@@ -302,42 +305,6 @@ GLint g_ks_uniform;
 GLint g_q_uniform;
 GLint g_displacement_uniform;
 
-// Função para obter AABB transformada por uma matriz
-collision::AABB getTransformedAABB(const SceneObject& obj, const glm::mat4& transform) {
-  collision::AABB transformedAABB;
-
-  // Transformamos os 8 vértices da caixa delimitadora
-  glm::vec3 vertices[8];
-  vertices[0] = glm::vec3(obj.bbox_min.x, obj.bbox_min.y, obj.bbox_min.z); // 000
-  vertices[1] = glm::vec3(obj.bbox_max.x, obj.bbox_min.y, obj.bbox_min.z); // 100
-  vertices[2] = glm::vec3(obj.bbox_min.x, obj.bbox_max.y, obj.bbox_min.z); // 010
-  vertices[3] = glm::vec3(obj.bbox_max.x, obj.bbox_max.y, obj.bbox_min.z); // 110
-  vertices[4] = glm::vec3(obj.bbox_min.x, obj.bbox_min.y, obj.bbox_max.z); // 001
-  vertices[5] = glm::vec3(obj.bbox_max.x, obj.bbox_min.y, obj.bbox_max.z); // 101
-  vertices[6] = glm::vec3(obj.bbox_min.x, obj.bbox_max.y, obj.bbox_max.z); // 011
-  vertices[7] = glm::vec3(obj.bbox_max.x, obj.bbox_max.y, obj.bbox_max.z); // 111
-
-  // Inicializamos com valores extremos
-  transformedAABB.min = glm::vec3(std::numeric_limits<float>::max());
-  transformedAABB.max = glm::vec3(std::numeric_limits<float>::lowest());
-
-  // Transformamos cada vértice e atualizamos min/max
-  for (int i = 0; i < 8; i++) {
-    glm::vec4 transformed = transform * glm::vec4(vertices[i], 1.0f);
-    glm::vec3 v           = glm::vec3(transformed.x, transformed.y, transformed.z);
-
-    transformedAABB.min.x = std::min(transformedAABB.min.x, v.x);
-    transformedAABB.min.y = std::min(transformedAABB.min.y, v.y);
-    transformedAABB.min.z = std::min(transformedAABB.min.z, v.z);
-
-    transformedAABB.max.x = std::max(transformedAABB.max.x, v.x);
-    transformedAABB.max.y = std::max(transformedAABB.max.y, v.y);
-    transformedAABB.max.z = std::max(transformedAABB.max.z, v.z);
-  }
-
-  return transformedAABB;
-}
-
 // Camera
 SphericCamera sphericCamera(3.0f,
                             g_CameraTheta,
@@ -454,6 +421,10 @@ int main(int argc, char* argv[]) {
   ObjModel planemodel("../../data/plane.obj");
   ComputeNormals(&planemodel);
   BuildTrianglesAndAddToVirtualScene(&planemodel);
+  SceneObject* planeobj = &g_VirtualScene["the_plane"];
+  planeobj->transform   = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f) * Matrix_Scale(20, 1, 20);
+  planeobj->bbox_min    = glm::vec3(planeobj->transform * glm::vec4(planeobj->bbox_min, 1.0f));
+  planeobj->bbox_max    = glm::vec3(planeobj->transform * glm::vec4(planeobj->bbox_max, 1.0f));
 
   // ObjModel maze("../../data/maze.obj");
   // ComputeNormals(&maze);
@@ -462,6 +433,10 @@ int main(int argc, char* argv[]) {
   ObjModel wall("../../data/cube.obj");
   ComputeNormals(&wall);
   BuildTrianglesAndAddToVirtualScene(&wall);
+  SceneObject* wallobj = &g_VirtualScene["cube"];
+  wallobj->transform   = Matrix_Identity() * Matrix_Translate(10.0f, 0.0f, 0.0f) * Matrix_Scale(1.0f, 1.0f, 1.0f);
+  wallobj->bbox_min    = glm::vec3(wallobj->transform * glm::vec4(wallobj->bbox_min, 1.0f));
+  wallobj->bbox_max    = glm::vec3(wallobj->transform * glm::vec4(wallobj->bbox_max, 1.0f));
 
   // ObjModel pacmanmodel("../../data/pacman.obj");
   // ComputeNormals(&pacmanmodel);
@@ -521,7 +496,7 @@ int main(int argc, char* argv[]) {
     // DrawVirtualObject("pacman");
 
     // Desenhamos o plano do chão
-    model = Matrix_Translate(0.0f, -1.1f, 0.0f) * Matrix_Scale(20, 1, 20);
+    model = g_VirtualScene["the_plane"].transform;
     glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
     glUniform1i(g_object_id_uniform, PLANE);
     DrawVirtualObject("the_plane");
@@ -532,27 +507,10 @@ int main(int argc, char* argv[]) {
     // glUniform1i(g_displacement_uniform, 20.0f);
     // DrawVirtualObject("maze");
 
-    // Aplicamos a transformação ao modelo, mas mantemos a bounding box original
-    glm::mat4 transform = Matrix_Translate(10.0f, 0.0f, 0.0f) * Matrix_Scale(1.0f, 1.0f, 1.0f);
-    model               = transform;
-
-    // Calculamos a bounding box transformada apenas para visualização
-    collision::AABB transformedAABB = getTransformedAABB(g_VirtualScene["cube"], transform);
-
-    // Enviamos a matriz de modelo para o shader
+    model = g_VirtualScene["cube"].transform;
     glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
     glUniform1i(g_object_id_uniform, PLANE);
     DrawVirtualObject("cube");
-
-    printf("?\n");
-    printf("bbox_min original: %.2f %.2f %.2f\n", g_VirtualScene["cube"].bbox_min.x,
-           g_VirtualScene["cube"].bbox_min.y, g_VirtualScene["cube"].bbox_min.z);
-    printf("bbox_max original: %.2f %.2f %.2f\n", g_VirtualScene["cube"].bbox_max.x,
-           g_VirtualScene["cube"].bbox_max.y, g_VirtualScene["cube"].bbox_max.z);
-    printf("bbox_min transformada: %.2f %.2f %.2f\n", transformedAABB.min.x,
-           transformedAABB.min.y, transformedAABB.min.z);
-    printf("bbox_max transformada: %.2f %.2f %.2f\n", transformedAABB.max.x,
-           transformedAABB.max.y, transformedAABB.max.z);
 
     glfwSwapBuffers(window);
 
@@ -1173,18 +1131,10 @@ void tryMove(void (*callback)(float deltaTime)) {
   for (const auto& pair : g_VirtualScene) {
     const SceneObject& obj = pair.second;
 
-    // Criar AABB do objeto, considerando sua transformação
-    // Por enquanto, apenas para o cubo, podemos expandir para outros objetos depois
+    // Criar AABB do objeto
     collision::AABB objAABB;
-    if (pair.first == "cube") {
-      // Usamos a matriz de transformação específica para o cubo
-      glm::mat4 transform = Matrix_Translate(10.0f, 0.0f, 0.0f) * Matrix_Scale(1.0f, 1.0f, 1.0f);
-      objAABB             = getTransformedAABB(obj, transform);
-    } else {
-      // Para outros objetos, usamos a bounding box original
-      objAABB.min = obj.bbox_min;
-      objAABB.max = obj.bbox_max;
-    }
+    objAABB.min = obj.bbox_min;
+    objAABB.max = obj.bbox_max;
 
     // Testar colisão entre a câmera (esfera) e o objeto(AABB)
     if (collision::testAABBSphere(objAABB, cameraSphere)) {
