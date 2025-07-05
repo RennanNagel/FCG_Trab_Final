@@ -30,4 +30,4 @@ def process_image(input_path, output_path, channel="red"):
 
 # Example usage:
 # Replace 'input.png' and 'output.png' with your file paths.
-process_image("data/pacman_ghost.png", "data/pacman_ghost_blue.png", channel="blue")
+process_image("data/pacman_ghost.png", "data/pacman_ghost_green.png", channel="green")

@@ -280,6 +280,11 @@ FreeCamera freeCamera(5.0f,
 
 Camera* camera = &freeCamera;
 
+// Posição do jogador no mundo
+glm::vec4 g_PlayerPosition = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+// Direção do jogador (ângulo de rotação em Y)
+float g_PlayerRotationY = 0.0f;
+
 float deltaTime     = 0.0f;
 float lastFrameTime = 0.0f;
 
@@ -354,10 +359,10 @@ int main(int argc, char* argv[]) {
   LoadShadersFromFiles();
 
   // Carregamos duas imagens para serem utilizadas como textura
-  LoadTextureImage("../../data/plane.png");             // TextureImage0
-  LoadTextureImage("../../data/floor_normals.png");     // TextureImage1
-  LoadTextureImage("../../data/maze.jpg");              // TextureImage2
-  LoadTextureImage("../../data/pacman_ghost_blue.png"); // TextureImage3
+  LoadTextureImage("../../data/plane.png");              // TextureImage0
+  LoadTextureImage("../../data/floor_normals.png");      // TextureImage1
+  LoadTextureImage("../../data/maze.jpg");               // TextureImage2
+  LoadTextureImage("../../data/pacman_ghost_green.png"); // TextureImage3
 
   // Construímos a representação de objetos geométricos através de malhas de triângulos
   // ObjModel spheremodel("../../data/sphere.obj");
@@ -395,25 +400,25 @@ int main(int argc, char* argv[]) {
   ghost->transform   = Matrix_Identity() * Matrix_Scale(0.01, 0.01, 0.01);
 
   // Generate the maze
-  // MazeGenerator maze(20, 20);
-  // maze.generateMaze();
-  //
-  // // Export each wall into a separate ObjModel
-  // auto mazeWalls = maze.exportToObjModels();
-  //
-  // for (auto& pair : mazeWalls) {
-  //   // const std::string&         wallName  = pair.first;
-  //   std::unique_ptr<ObjModel>& wallModel = pair.second;
-  //
-  //   // Compute normals (you can skip if you add normals during export)
-  //   ComputeNormals(wallModel.get());
-  //
-  //   // Add to the scene
-  //   BuildTrianglesAndAddToVirtualScene(wallModel.get());
-  // }
+  MazeGenerator maze(20, 20);
+  maze.generateMaze();
+
+  // Export each wall into a separate ObjModel
+  auto mazeWalls = maze.exportToObjModels();
+
+  for (auto& pair : mazeWalls) {
+    // const std::string&         wallName  = pair.first;
+    std::unique_ptr<ObjModel>& wallModel = pair.second;
+
+    // Compute normals (you can skip if you add normals during export)
+    ComputeNormals(wallModel.get());
+
+    // Add to the scene
+    BuildTrianglesAndAddToVirtualScene(wallModel.get());
+  }
 
   // Guardar nomes das paredes para desenhar depois
-  // std::list<std::string> wallNames = maze.getWallNames();
+  std::list<std::string> wallNames = maze.getWallNames();
 
   if (argc > 1) {
     ObjModel model(argv[1]);
@@ -469,7 +474,12 @@ int main(int argc, char* argv[]) {
     glUniform1i(g_object_id_uniform, PLANE);
     DrawVirtualObject("the_plane");
 
-    model = g_VirtualScene["ghost"].transform;
+    // Desenhar o fantasma na posição do jogador com rotação e movimento de onda
+    float waveOffset = 0.2f * sin(currentFrameTime * 2.0f);
+    model            = Matrix_Translate(g_PlayerPosition.x, g_PlayerPosition.y + waveOffset, g_PlayerPosition.z) *
+            Matrix_Rotate_Y(g_PlayerRotationY) *
+            Matrix_Scale(0.01f, 0.01f, 0.01f);
+
     glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
     glUniform1i(g_object_id_uniform, GHOST);
     DrawVirtualObject("ghost");
@@ -486,12 +496,12 @@ int main(int argc, char* argv[]) {
     // DrawVirtualObject("cube");
 
     // Desenhar todas as paredes do labirinto
-    // for (const std::string& wallName : wallNames) {
-    //   model = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f);
-    //   glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    //   glUniform1i(g_object_id_uniform, MAZE);
-    //   DrawVirtualObject(wallName.c_str());
-    // }
+    for (const std::string& wallName : wallNames) {
+      model = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f);
+      glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+      glUniform1i(g_object_id_uniform, MAZE);
+      DrawVirtualObject(wallName.c_str());
+    }
 
     glfwSwapBuffers(window);
 
@@ -1049,15 +1059,101 @@ void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
   }
 }
 
+void trySphericMove(void (*callback)(float deltaTime)) {
+  // Para câmera esférica, salvar distância atual
+  float oldDistance = camera->getDistance();
+
+  // Tentar mover a câmera
+  callback(deltaTime);
+
+  // Restaurar a distância original para manter constante
+  camera->setDistance(oldDistance);
+
+  // Criar uma esfera representando a câmera
+  collision::Sphere cameraSphere;
+  cameraSphere.center =
+      glm::vec3(camera->getPosition().x,
+                camera->getPosition().y,
+                camera->getPosition().z);
+  cameraSphere.radius = 0.1f; // Raio da câmera
+
+  // Verificar colisão com todos os objetos da cena
+  bool collision = false;
+  for (const auto& pair : g_VirtualScene) {
+    const SceneObject& obj = pair.second;
+
+    // Criar AABB do objeto
+    collision::AABB objAABB;
+    objAABB.min = glm::vec3(obj.transform * glm::vec4(obj.bbox_min, 1.0f));
+    objAABB.max = glm::vec3(obj.transform * glm::vec4(obj.bbox_max, 1.0f));
+
+    // Testar colisão entre a câmera (esfera) e o objeto(AABB)
+    if (collision::testAABBSphere(objAABB, cameraSphere)) {
+      collision = true;
+      break;
+    }
+  }
+
+  // Se houve colisão na câmera esférica, mover para mais perto do centro
+  if (collision) {
+    // Reduzir a distância em pequenos incrementos até não haver mais colisão
+    float newDistance = oldDistance * 0.95f; // Reduz 5% da distância
+    camera->setDistance(newDistance);
+
+    // Verificar se ainda há colisão após reduzir a distância
+    cameraSphere.center = glm::vec3(camera->getPosition().x,
+                                    camera->getPosition().y,
+                                    camera->getPosition().z);
+
+    // Se ainda há colisão, continuar reduzindo
+    bool stillColliding = false;
+    for (const auto& pair : g_VirtualScene) {
+      const SceneObject& obj = pair.second;
+      collision::AABB    objAABB;
+      objAABB.min = glm::vec3(obj.transform * glm::vec4(obj.bbox_min, 1.0f));
+      objAABB.max = glm::vec3(obj.transform * glm::vec4(obj.bbox_max, 1.0f));
+
+      if (collision::testAABBSphere(objAABB, cameraSphere)) {
+        stillColliding = true;
+        break;
+      }
+    }
+
+    // Se ainda há colisão, restaurar distância original
+    if (stillColliding) {
+      camera->setDistance(oldDistance);
+    }
+  }
+}
+
 void processCursor(double xpos, double ypos) {
   if (g_LeftMouseButtonPressed) {
-    float newTheta = camera->getTheta();
-    newTheta += 0.01f * g_CursorDeltaX;
-    camera->setTheta(newTheta);
+    // Verificar se é câmera esférica ou livre
+    bool isSphericalCamera = (camera == &sphericCamera);
 
-    float newPhi = camera->getPhi();
-    newPhi -= 0.01f * g_CursorDeltaY;
-    camera->setPhi(newPhi);
+    if (isSphericalCamera) {
+      // Para câmera esférica, usar detecção de colisão
+      trySphericMove([](float dt) {
+        float newTheta = camera->getTheta();
+        newTheta += 0.01f * g_CursorDeltaX;
+        camera->setTheta(newTheta);
+      });
+
+      trySphericMove([](float dt) {
+        float newPhi = camera->getPhi();
+        newPhi -= 0.01f * g_CursorDeltaY;
+        camera->setPhi(newPhi);
+      });
+    } else {
+      // Para câmera livre, comportamento normal
+      float newTheta = camera->getTheta();
+      newTheta += 0.01f * g_CursorDeltaX;
+      camera->setTheta(newTheta);
+
+      float newPhi = camera->getPhi();
+      newPhi -= 0.01f * g_CursorDeltaY;
+      camera->setPhi(newPhi);
+    }
   }
 
   if (g_RightMouseButtonPressed) {
@@ -1133,6 +1229,7 @@ void tryMove(void (*callback)(float deltaTime)) {
   }
 }
 
+
 void processKeys(double currentTime) {
   for (std::unordered_map<int, KeyState>::iterator it = keys.begin(); it != keys.end(); ++it) {
     int      key       = it->first;
@@ -1141,14 +1238,61 @@ void processKeys(double currentTime) {
     if (key_state.isPressed) {
       double& lastTime = key_state.lastTime;
       if (currentTime - lastTime >= repeatDelay) {
+        // Verificar se é câmera esférica ou livre
+        bool isSphericalCamera = (camera == &sphericCamera);
+
         if (key == GLFW_KEY_W) {
-          tryMove([](float dt) { camera->MoveForward(dt); });
+          if (isSphericalCamera) {
+            // Obter vetor de visão da câmera
+            glm::vec4 viewDirection = glm::normalize(sphericCamera.getViewVector());
+            // Projetar no plano horizontal (Y = 0)
+            glm::vec4 forward = glm::normalize(glm::vec4(viewDirection.x, 0.0f, viewDirection.z, 0.0f));
+            g_PlayerPosition += forward * 5.0f * deltaTime;
+            // Calcular rotação baseada na direção do movimento
+            g_PlayerRotationY = atan2(forward.x, forward.z);
+            sphericCamera.setLookAt(g_PlayerPosition);
+          } else {
+            tryMove([](float dt) { camera->MoveForward(dt); });
+          }
         } else if (key == GLFW_KEY_A) {
-          tryMove([](float dt) { camera->MoveLeft(dt); });
+          if (isSphericalCamera) {
+            // Obter vetor de visão da câmera
+            glm::vec4 viewDirection = glm::normalize(sphericCamera.getViewVector());
+            // Calcular vetor perpendicular à esquerda (produto vetorial com Y)
+            glm::vec4 left = glm::normalize(glm::vec4(viewDirection.z, 0.0f, -viewDirection.x, 0.0f));
+            g_PlayerPosition += left * 5.0f * deltaTime;
+            // Calcular rotação baseada na direção do movimento
+            g_PlayerRotationY = atan2(left.x, left.z);
+            sphericCamera.setLookAt(g_PlayerPosition);
+          } else {
+            tryMove([](float dt) { camera->MoveLeft(dt); });
+          }
         } else if (key == GLFW_KEY_S) {
-          tryMove([](float dt) { camera->MoveBackward(dt); });
+          if (isSphericalCamera) {
+            // Obter vetor de visão da câmera (direção oposta)
+            glm::vec4 viewDirection = glm::normalize(sphericCamera.getViewVector());
+            // Projetar no plano horizontal e inverter
+            glm::vec4 backward = -glm::normalize(glm::vec4(viewDirection.x, 0.0f, viewDirection.z, 0.0f));
+            g_PlayerPosition += backward * 5.0f * deltaTime;
+            // Calcular rotação baseada na direção do movimento
+            g_PlayerRotationY = atan2(backward.x, backward.z);
+            sphericCamera.setLookAt(g_PlayerPosition);
+          } else {
+            tryMove([](float dt) { camera->MoveBackward(dt); });
+          }
         } else if (key == GLFW_KEY_D) {
-          tryMove([](float dt) { camera->MoveRight(dt); });
+          if (isSphericalCamera) {
+            // Obter vetor de visão da câmera
+            glm::vec4 viewDirection = glm::normalize(sphericCamera.getViewVector());
+            // Calcular vetor perpendicular à direita (produto vetorial com Y)
+            glm::vec4 right = glm::normalize(glm::vec4(-viewDirection.z, 0.0f, viewDirection.x, 0.0f));
+            g_PlayerPosition += right * 5.0f * deltaTime;
+            // Calcular rotação baseada na direção do movimento
+            g_PlayerRotationY = atan2(right.x, right.z);
+            sphericCamera.setLookAt(g_PlayerPosition);
+          } else {
+            tryMove([](float dt) { camera->MoveRight(dt); });
+          }
         }
 
         lastTime = currentTime;
