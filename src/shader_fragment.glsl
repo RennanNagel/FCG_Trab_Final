@@ -28,8 +28,8 @@ uniform float q;
 #define SPHERE 0
 #define BUNNY  1
 #define PLANE  2
-#define PACMAN 3
-#define MAZE 4
+#define GHOST  3
+#define MAZE   4
 
 uniform int object_id;
 
@@ -41,6 +41,7 @@ uniform vec4 bbox_max;
 uniform sampler2D TextureImage0;
 uniform sampler2D TextureImage1;
 uniform sampler2D TextureImage2;
+uniform sampler2D TextureImage3;
 
 // O valor de saída ("out") de um Fragment Shader é a cor final do fragmento.
 out vec4 color;
@@ -117,11 +118,11 @@ void main()
     else if ( object_id == PLANE )
     {
         // Coordenadas de textura do plano, obtidas do arquivo OBJ.
-        U = texcoords.x*20;
-        V = texcoords.y*20;
+        U = texcoords.x*50;
+        V = texcoords.y*50;
         n = vec4(normalize(texture(TextureImage1, vec2(U, V)).rgb), 0.0f);
         Kd0 = texture(TextureImage0, vec2(U,V)).rgb;
-        ao = texture(TextureImage0, vec2(U, V)).r;
+        ao = texture(TextureImage1, vec2(U, V)).r;
     }
 
     else if ( object_id == MAZE ) 
@@ -141,9 +142,11 @@ void main()
     
     // vec4 n = vec4(normalize(texture(TextureImage1, vec2(U, V)).rgb), 0.0f);
 
-    if ( object_id == PACMAN ) 
+    if ( object_id == GHOST ) 
     {
-        Kd0 = kd;
+        U = texcoords.x;
+        V = texcoords.y;
+        Kd0 = texture(TextureImage3, vec2(U, V)).rgb;
     }
 
     // Equação de Iluminação
@@ -151,23 +154,7 @@ void main()
     vec4 r = -l + 2*n*dot(n,l);
 
     color.rgb = Kd0 * I * (lambert + 0.01) + ks*I*pow(max(0,dot(r, v)), q);
-
-    // NOTE: Se você quiser fazer o rendering de objetos transparentes, é
-    // necessário:
-    // 1) Habilitar a operação de "blending" de OpenGL logo antes de realizar o
-    //    desenho dos objetos transparentes, com os comandos abaixo no código C++:
-    //      glEnable(GL_BLEND);
-    //      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    // 2) Realizar o desenho de todos objetos transparentes *após* ter desenhado
-    //    todos os objetos opacos; e
-    // 3) Realizar o desenho de objetos transparentes ordenados de acordo com
-    //    suas distâncias para a câmera (desenhando primeiro objetos
-    //    transparentes que estão mais longe da câmera).
-    // Alpha default = 1 = 100% opaco = 0% transparente
     color.a = 1;
-
-    // Cor final com correção gamma, considerando monitor sRGB.
-    // Veja https://en.wikipedia.org/w/index.php?title=Gamma_correction&oldid=751281772#Windows.2C_Mac.2C_sRGB_and_TV.2Fvideo_standard_gammas
     color.rgb = pow(color.rgb, vec3(1.0,1.0,1.0)/2.2);
 } 
 

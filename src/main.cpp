@@ -255,19 +255,19 @@ GLint g_q_uniform;
 GLint g_displacement_uniform;
 
 // Camera
-SphericCamera sphericCamera(3.0f,
+SphericCamera sphericCamera(5.0f,
                             g_CameraTheta,
                             g_CameraPhi,
                             g_CameraDistance,
                             glm::vec4(0.0f, 0.0f, 0.0f, 1.0f),
                             glm::vec4(0.0f, 1.0f, 0.0f, 0.0f),
                             -0.01f,
-                            -10.0f,
+                            -1000.0f,
                             3.141592 / 3.0f,
                             (float) WIDTH / HEIGHT,
                             true);
 
-FreeCamera freeCamera(3.0f,
+FreeCamera freeCamera(5.0f,
                       g_CameraTheta,
                       g_CameraPhi,
                       glm::vec4(-10.0f, 0.0f, 0.0f, 1.0f),
@@ -354,9 +354,10 @@ int main(int argc, char* argv[]) {
   LoadShadersFromFiles();
 
   // Carregamos duas imagens para serem utilizadas como textura
-  LoadTextureImage("../../data/plane.png");         // TextureImage0
-  LoadTextureImage("../../data/floor_normals.png"); // TextureImage1
-  LoadTextureImage("../../data/maze.jpg");          // TextureImage2
+  LoadTextureImage("../../data/plane.png");             // TextureImage0
+  LoadTextureImage("../../data/floor_normals.png");     // TextureImage1
+  LoadTextureImage("../../data/maze.jpg");              // TextureImage2
+  LoadTextureImage("../../data/pacman_ghost_blue.png"); // TextureImage3
 
   // Construímos a representação de objetos geométricos através de malhas de triângulos
   // ObjModel spheremodel("../../data/sphere.obj");
@@ -371,7 +372,7 @@ int main(int argc, char* argv[]) {
   ComputeNormals(&planemodel);
   BuildTrianglesAndAddToVirtualScene(&planemodel);
   SceneObject* planeobj = &g_VirtualScene["the_plane"];
-  planeobj->transform   = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f) * Matrix_Scale(20, 1, 20);
+  planeobj->transform   = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f) * Matrix_Scale(50, 1, 50);
   planeobj->bbox_min    = glm::vec3(planeobj->transform * glm::vec4(planeobj->bbox_min, 1.0f));
   planeobj->bbox_max    = glm::vec3(planeobj->transform * glm::vec4(planeobj->bbox_max, 1.0f));
 
@@ -379,39 +380,40 @@ int main(int argc, char* argv[]) {
   // ComputeNormals(&maze);
   // BuildTrianglesAndAddToVirtualScene(&maze);
 
-  ObjModel wall("../../data/cube.obj");
-  ComputeNormals(&wall);
-  BuildTrianglesAndAddToVirtualScene(&wall);
-  SceneObject* wallobj = &g_VirtualScene["cube"];
-  wallobj->transform   = Matrix_Identity() * Matrix_Translate(10.0f, 0.0f, 0.0f) * Matrix_Scale(1.0f, 1.0f, 1.0f);
-  wallobj->bbox_min    = glm::vec3(wallobj->transform * glm::vec4(wallobj->bbox_min, 1.0f));
-  wallobj->bbox_max    = glm::vec3(wallobj->transform * glm::vec4(wallobj->bbox_max, 1.0f));
+  // ObjModel wall("../../data/cube.obj");
+  // ComputeNormals(&wall);
+  // BuildTrianglesAndAddToVirtualScene(&wall);
+  // SceneObject* wallobj = &g_VirtualScene["cube"];
+  // wallobj->transform   = Matrix_Identity() * Matrix_Translate(10.0f, 0.0f, 0.0f) * Matrix_Scale(1.0f, 1.0f, 1.0f);
+  // wallobj->bbox_min    = glm::vec3(wallobj->transform * glm::vec4(wallobj->bbox_min, 1.0f));
+  // wallobj->bbox_max    = glm::vec3(wallobj->transform * glm::vec4(wallobj->bbox_max, 1.0f));
 
-  // ObjModel pacmanmodel("../../data/pacman.obj");
-  // ComputeNormals(&pacmanmodel);
-  // BuildTrianglesAndAddToVirtualScene(&pacmanmodel);
-
+  ObjModel ghostmodel("../../data/pacman_ghost.obj");
+  ComputeNormals(&ghostmodel);
+  BuildTrianglesAndAddToVirtualScene(&ghostmodel);
+  SceneObject* ghost = &g_VirtualScene["ghost"];
+  ghost->transform   = Matrix_Identity() * Matrix_Scale(0.01, 0.01, 0.01);
 
   // Generate the maze
-  MazeGenerator maze(15, 15);
-  maze.generateMaze();
-
-  // Export each wall into a separate ObjModel
-  auto mazeWalls = maze.exportToObjModels();
-
-  for (auto& pair : mazeWalls) {
-    const std::string&         wallName  = pair.first;
-    std::unique_ptr<ObjModel>& wallModel = pair.second;
-
-    // Compute normals (you can skip if you add normals during export)
-    ComputeNormals(wallModel.get());
-
-    // Add to the scene
-    BuildTrianglesAndAddToVirtualScene(wallModel.get());
-  }
+  // MazeGenerator maze(20, 20);
+  // maze.generateMaze();
+  //
+  // // Export each wall into a separate ObjModel
+  // auto mazeWalls = maze.exportToObjModels();
+  //
+  // for (auto& pair : mazeWalls) {
+  //   // const std::string&         wallName  = pair.first;
+  //   std::unique_ptr<ObjModel>& wallModel = pair.second;
+  //
+  //   // Compute normals (you can skip if you add normals during export)
+  //   ComputeNormals(wallModel.get());
+  //
+  //   // Add to the scene
+  //   BuildTrianglesAndAddToVirtualScene(wallModel.get());
+  // }
 
   // Guardar nomes das paredes para desenhar depois
-  std::list<std::string> wallNames = maze.getWallNames();
+  // std::list<std::string> wallNames = maze.getWallNames();
 
   if (argc > 1) {
     ObjModel model(argv[1]);
@@ -445,7 +447,7 @@ int main(int argc, char* argv[]) {
 #define SPHERE 0
 #define BUNNY 1
 #define PLANE 2
-#define PACMAN 3
+#define GHOST 3
 #define MAZE 4
 
     float currentFrameTime = glfwGetTime(); // Time in seconds
@@ -460,10 +462,6 @@ int main(int argc, char* argv[]) {
     // glUniform1i(g_object_id_uniform, BUNNY);
     // DrawVirtualObject("the_bunny");
 
-    // model = Matrix_Scale(0.01f, 0.01f, 0.01f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
-    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    // glUniform1i(g_object_id_uniform, PACMAN);
-    // DrawVirtualObject("pacman");
 
     // Desenhamos o plano do chão
     model = g_VirtualScene["the_plane"].transform;
@@ -471,24 +469,29 @@ int main(int argc, char* argv[]) {
     glUniform1i(g_object_id_uniform, PLANE);
     DrawVirtualObject("the_plane");
 
+    model = g_VirtualScene["ghost"].transform;
+    glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    glUniform1i(g_object_id_uniform, GHOST);
+    DrawVirtualObject("ghost");
+
     // model = Matrix_Translate(0.0f, -1.1f, 0.0f);
     // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
     // glUniform1i(g_object_id_uniform, MAZE);
     // glUniform1i(g_displacement_uniform, 20.0f);
     // DrawVirtualObject("maze");
 
-    model = g_VirtualScene["cube"].transform;
-    glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform1i(g_object_id_uniform, PLANE);
-    DrawVirtualObject("cube");
+    // model = g_VirtualScene["cube"].transform;
+    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    // glUniform1i(g_object_id_uniform, PLANE);
+    // DrawVirtualObject("cube");
 
     // Desenhar todas as paredes do labirinto
-    for (const std::string& wallName : wallNames) {
-      model = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f);
-      glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-      glUniform1i(g_object_id_uniform, MAZE);
-      DrawVirtualObject(wallName.c_str());
-    }
+    // for (const std::string& wallName : wallNames) {
+    //   model = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f);
+    //   glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    //   glUniform1i(g_object_id_uniform, MAZE);
+    //   DrawVirtualObject(wallName.c_str());
+    // }
 
     glfwSwapBuffers(window);
 
@@ -644,6 +647,7 @@ void LoadShadersFromFiles() {
   glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage0"), 0);
   glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage1"), 1);
   glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage2"), 2);
+  glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage3"), 3);
   glUseProgram(0);
 }
 
@@ -741,6 +745,7 @@ void BuildTrianglesAndAddToVirtualScene(ObjModel* model) {
     theobject.name                   = model->shapes[shape].name;
     theobject.rendering_mode         = GL_TRIANGLES;
     theobject.vertex_array_object_id = vertex_array_object_id;
+    theobject.transform              = Matrix_Identity();
 
     if (model->materials.empty()) {
       // OBJ has no .mtl — just empty
@@ -806,6 +811,7 @@ void BuildTrianglesAndAddToVirtualScene(ObjModel* model) {
     for (auto& pair : group_map) {
       theobject.groups.push_back(pair.second);
     }
+
 
     g_VirtualScene[theobject.name] = theobject;
   }
@@ -1111,8 +1117,8 @@ void tryMove(void (*callback)(float deltaTime)) {
 
     // Criar AABB do objeto
     collision::AABB objAABB;
-    objAABB.min = obj.bbox_min;
-    objAABB.max = obj.bbox_max;
+    objAABB.min = glm::vec3(obj.transform * glm::vec4(obj.bbox_min, 1.0f));
+    objAABB.max = glm::vec3(obj.transform * glm::vec4(obj.bbox_max, 1.0f));
 
     // Testar colisão entre a câmera (esfera) e o objeto(AABB)
     if (collision::testAABBSphere(objAABB, cameraSphere)) {
