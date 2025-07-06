@@ -633,7 +633,7 @@ int main(int argc, char* argv[]) {
             Matrix_Rotate_Y(g_CowRotationY);
 
     glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform1i(g_object_id_uniform, COW);
+    glUniform1i(g_object_id_uniform, BUNNY);
     DrawVirtualObject("cow");
 
     // Verificar colisões entre jogador e inimigos
