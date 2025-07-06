@@ -135,6 +135,7 @@ void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 // Key Stuff definitions
 void processKeys(double currentTime);
 
+
 struct KeyState {
   bool   isPressed = false;
   double lastTime  = 0.0;
@@ -278,7 +279,7 @@ FreeCamera freeCamera(5.0f,
                       (float) WIDTH / HEIGHT,
                       true);
 
-Camera* camera = &freeCamera;
+Camera* camera = &sphericCamera;
 
 // Posição do jogador no mundo
 glm::vec4 g_PlayerPosition = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
@@ -1059,6 +1060,46 @@ void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
   }
 }
 
+
+void tryPlayerMove(glm::vec4 movement) {
+  // Salvar posição atual do jogador
+  glm::vec4 oldPlayerPosition = g_PlayerPosition;
+
+  // Tentar mover o jogador
+  g_PlayerPosition += movement;
+
+  // Criar uma esfera representando o jogador
+  collision::Sphere playerSphere;
+  playerSphere.center = glm::vec3(g_PlayerPosition.x, g_PlayerPosition.y, g_PlayerPosition.z);
+  playerSphere.radius = 0.3f; // Raio do jogador (maior que a câmera)
+
+  // Verificar colisão com todos os objetos da cena
+  bool collision = false;
+  for (const auto& pair : g_VirtualScene) {
+    const SceneObject& obj = pair.second;
+
+    // Pular o fantasma (não colidir consigo mesmo)
+    if (pair.first == "ghost")
+      continue;
+
+    // Criar AABB do objeto
+    collision::AABB objAABB;
+    objAABB.min = glm::vec3(obj.transform * glm::vec4(obj.bbox_min, 1.0f));
+    objAABB.max = glm::vec3(obj.transform * glm::vec4(obj.bbox_max, 1.0f));
+
+    // Testar colisão entre o jogador (esfera) e o objeto (AABB)
+    if (collision::testAABBSphere(objAABB, playerSphere)) {
+      collision = true;
+      break;
+    }
+  }
+
+  // Se houve colisão, restaurar posição anterior
+  if (collision) {
+    g_PlayerPosition = oldPlayerPosition;
+  }
+}
+
 void trySphericMove(void (*callback)(float deltaTime)) {
   // Para câmera esférica, salvar distância atual
   float oldDistance = camera->getDistance();
@@ -1071,16 +1112,19 @@ void trySphericMove(void (*callback)(float deltaTime)) {
 
   // Criar uma esfera representando a câmera
   collision::Sphere cameraSphere;
-  cameraSphere.center =
-      glm::vec3(camera->getPosition().x,
-                camera->getPosition().y,
-                camera->getPosition().z);
-  cameraSphere.radius = 0.1f; // Raio da câmera
+  cameraSphere.center = glm::vec3(camera->getPosition().x,
+                                  camera->getPosition().y,
+                                  camera->getPosition().z);
+  cameraSphere.radius = 0.1f;
 
-  // Verificar colisão com todos os objetos da cena
+  // Verificar colisão com todas as paredes do labirinto
   bool collision = false;
   for (const auto& pair : g_VirtualScene) {
     const SceneObject& obj = pair.second;
+
+    // Verificar apenas paredes do labirinto (que começam com "wall_")
+    if (pair.first.find("wall_") != 0)
+      continue;
 
     // Criar AABB do objeto
     collision::AABB objAABB;
@@ -1109,7 +1153,12 @@ void trySphericMove(void (*callback)(float deltaTime)) {
     bool stillColliding = false;
     for (const auto& pair : g_VirtualScene) {
       const SceneObject& obj = pair.second;
-      collision::AABB    objAABB;
+
+      // Verificar apenas paredes do labirinto
+      if (pair.first.find("wall_") != 0)
+        continue;
+
+      collision::AABB objAABB;
       objAABB.min = glm::vec3(obj.transform * glm::vec4(obj.bbox_min, 1.0f));
       objAABB.max = glm::vec3(obj.transform * glm::vec4(obj.bbox_max, 1.0f));
 
@@ -1135,7 +1184,7 @@ void processCursor(double xpos, double ypos) {
       // Para câmera esférica, usar detecção de colisão
       trySphericMove([](float dt) {
         float newTheta = camera->getTheta();
-        newTheta += 0.01f * g_CursorDeltaX;
+        newTheta -= 0.01f * g_CursorDeltaX;
         camera->setTheta(newTheta);
       });
 
@@ -1246,8 +1295,9 @@ void processKeys(double currentTime) {
             // Obter vetor de visão da câmera
             glm::vec4 viewDirection = glm::normalize(sphericCamera.getViewVector());
             // Projetar no plano horizontal (Y = 0)
-            glm::vec4 forward = glm::normalize(glm::vec4(viewDirection.x, 0.0f, viewDirection.z, 0.0f));
-            g_PlayerPosition += forward * 5.0f * deltaTime;
+            glm::vec4 forward  = glm::normalize(glm::vec4(viewDirection.x, 0.0f, viewDirection.z, 0.0f));
+            glm::vec4 movement = forward * 5.0f * deltaTime;
+            tryPlayerMove(movement);
             // Calcular rotação baseada na direção do movimento
             g_PlayerRotationY = atan2(forward.x, forward.z);
             sphericCamera.setLookAt(g_PlayerPosition);
@@ -1259,8 +1309,9 @@ void processKeys(double currentTime) {
             // Obter vetor de visão da câmera
             glm::vec4 viewDirection = glm::normalize(sphericCamera.getViewVector());
             // Calcular vetor perpendicular à esquerda (produto vetorial com Y)
-            glm::vec4 left = glm::normalize(glm::vec4(viewDirection.z, 0.0f, -viewDirection.x, 0.0f));
-            g_PlayerPosition += left * 5.0f * deltaTime;
+            glm::vec4 left     = glm::normalize(glm::vec4(viewDirection.z, 0.0f, -viewDirection.x, 0.0f));
+            glm::vec4 movement = left * 5.0f * deltaTime;
+            tryPlayerMove(movement);
             // Calcular rotação baseada na direção do movimento
             g_PlayerRotationY = atan2(left.x, left.z);
             sphericCamera.setLookAt(g_PlayerPosition);
@@ -1273,7 +1324,8 @@ void processKeys(double currentTime) {
             glm::vec4 viewDirection = glm::normalize(sphericCamera.getViewVector());
             // Projetar no plano horizontal e inverter
             glm::vec4 backward = -glm::normalize(glm::vec4(viewDirection.x, 0.0f, viewDirection.z, 0.0f));
-            g_PlayerPosition += backward * 5.0f * deltaTime;
+            glm::vec4 movement = backward * 5.0f * deltaTime;
+            tryPlayerMove(movement);
             // Calcular rotação baseada na direção do movimento
             g_PlayerRotationY = atan2(backward.x, backward.z);
             sphericCamera.setLookAt(g_PlayerPosition);
@@ -1285,8 +1337,9 @@ void processKeys(double currentTime) {
             // Obter vetor de visão da câmera
             glm::vec4 viewDirection = glm::normalize(sphericCamera.getViewVector());
             // Calcular vetor perpendicular à direita (produto vetorial com Y)
-            glm::vec4 right = glm::normalize(glm::vec4(-viewDirection.z, 0.0f, viewDirection.x, 0.0f));
-            g_PlayerPosition += right * 5.0f * deltaTime;
+            glm::vec4 right    = glm::normalize(glm::vec4(-viewDirection.z, 0.0f, viewDirection.x, 0.0f));
+            glm::vec4 movement = right * 5.0f * deltaTime;
+            tryPlayerMove(movement);
             // Calcular rotação baseada na direção do movimento
             g_PlayerRotationY = atan2(right.x, right.z);
             sphericCamera.setLookAt(g_PlayerPosition);
