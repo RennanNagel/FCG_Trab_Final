@@ -7,6 +7,9 @@
 in vec4 position_world;
 in vec4 normal;
 
+// Uniform para controlar a transparência
+uniform float transparency = 1.0;
+
 // Posição do vértice atual no sistema de coordenadas local do modelo.
 in vec4 position_model;
 
@@ -154,7 +157,7 @@ void main()
     vec4 r = -l + 2*n*dot(n,l);
 
     color.rgb = Kd0 * I * (lambert + 0.01) + ks*I*pow(max(0,dot(r, v)), q);
-    color.a = 1;
+    color.a = transparency;
     color.rgb = pow(color.rgb, vec3(1.0,1.0,1.0)/2.2);
 } 
 
