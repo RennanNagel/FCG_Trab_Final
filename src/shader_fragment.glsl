@@ -28,11 +28,13 @@ uniform vec3 ks;
 uniform float q;
 
 // Identificador que define qual objeto está sendo desenhado no momento
-#define SPHERE 0
-#define BUNNY  1
-#define PLANE  2
-#define GHOST  3
-#define MAZE   4
+#define SPHERE     0
+#define BUNNY      1
+#define PLANE      2
+#define GHOST      3
+#define MAZE       4
+#define ENEMY_RED  5
+#define ENEMY_BLUE 6
 
 uniform int object_id;
 
@@ -45,6 +47,8 @@ uniform sampler2D TextureImage0;
 uniform sampler2D TextureImage1;
 uniform sampler2D TextureImage2;
 uniform sampler2D TextureImage3;
+uniform sampler2D TextureImage4;
+uniform sampler2D TextureImage5;
 
 // O valor de saída ("out") de um Fragment Shader é a cor final do fragmento.
 out vec4 color;
@@ -150,6 +154,20 @@ void main()
         U = texcoords.x;
         V = texcoords.y;
         Kd0 = texture(TextureImage3, vec2(U, V)).rgb;
+    }
+
+    if ( object_id == ENEMY_RED ) 
+    {
+        U = texcoords.x;
+        V = texcoords.y;
+        Kd0 = texture(TextureImage4, vec2(U, V)).rgb;
+    }
+
+    if ( object_id == ENEMY_BLUE ) 
+    {
+        U = texcoords.x;
+        V = texcoords.y;
+        Kd0 = texture(TextureImage5, vec2(U, V)).rgb;
     }
 
     // Equação de Iluminação

@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 
 // Headers abaixo são específicos de C++
 #include <map>
@@ -282,11 +283,52 @@ Camera* camera = &sphericCamera;
 
 // Posição do jogador no mundo
 glm::vec4 g_PlayerPosition = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+// Posição inicial do jogador (para reset)
+glm::vec4 g_PlayerStartPosition = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
 // Direção do jogador (ângulo de rotação em Y)
 float g_PlayerRotationY = 0.0f;
 
+// Sistema de vidas
+int  g_PlayerLives = 3;
+bool g_GameOver    = false;
+
+// Estrutura para representar um inimigo
+struct Enemy {
+  glm::vec4 position;
+  float     rotationY;
+  int       colorType;  // 0 = vermelho, 1 = azul
+  float     waveOffset; // Para movimento de onda individual
+
+  // Variáveis para movimento
+  int   cellX, cellY;             // Posição atual na grade do labirinto
+  int   targetCellX, targetCellY; // Célula de destino
+  float moveTimer;                // Timer para controlar velocidade de movimento
+  float moveSpeed;                // Velocidade de movimento
+  bool  isMoving;                 // Se está se movendo para uma nova célula
+
+  // Variáveis para perseguição do jogador
+  float detectionRadius; // Raio de detecção do jogador
+  bool  isChasing;       // Se está perseguindo o jogador
+  float chaseSpeed;      // Velocidade quando perseguindo (mais rápida)
+};
+
+// Lista de inimigos
+std::vector<Enemy> g_Enemies;
+
+// Gerador de labirinto global
+MazeGenerator* g_Maze = nullptr;
+
 float deltaTime     = 0.0f;
 float lastFrameTime = 0.0f;
+
+// Função para verificar colisão entre jogador e inimigos
+void CheckPlayerEnemyCollisions();
+
+// Função para resetar posição do jogador
+void ResetPlayerPosition();
+
+// Função para reposicionar inimigos
+void RespawnEnemies();
 
 int main(int argc, char* argv[]) {
   // Inicializamos a biblioteca GLFW, utilizada para criar uma janela do
@@ -363,6 +405,8 @@ int main(int argc, char* argv[]) {
   LoadTextureImage("../../data/floor_normals.png");      // TextureImage1
   LoadTextureImage("../../data/maze.jpg");               // TextureImage2
   LoadTextureImage("../../data/pacman_ghost_green.png"); // TextureImage3
+  LoadTextureImage("../../data/pacman_ghost_red.png");   // TextureImage4
+  LoadTextureImage("../../data/pacman_ghost_blue.png");  // TextureImage5
 
   // Construímos a representação de objetos geométricos através de malhas de triângulos
   // ObjModel spheremodel("../../data/sphere.obj");
@@ -402,6 +446,7 @@ int main(int argc, char* argv[]) {
   // Generate the maze
   MazeGenerator maze(20, 20);
   maze.generateMaze();
+  g_Maze = &maze; // Armazenar referência global
 
   // Export each wall into a separate ObjModel
   auto mazeWalls = maze.exportToObjModels();
@@ -419,6 +464,58 @@ int main(int argc, char* argv[]) {
 
   // Guardar nomes das paredes para desenhar depois
   std::list<std::string> wallNames = maze.getWallNames();
+
+  // Inicializar inimigos em posições válidas do labirinto
+  srand(time(NULL));
+
+  // Obter todas as posições válidas do labirinto
+  vector<pair<int, int>> validPositions = maze.getValidPositions();
+
+  // Embaralhar as posições para aleatoriedade
+  random_shuffle(validPositions.begin(), validPositions.end());
+
+  // Criar inimigos nas primeiras 8 posições válidas
+  int numEnemies = min(8, (int) validPositions.size());
+  for (int i = 0; i < numEnemies; i++) {
+    Enemy enemy;
+
+    // Obter posição da célula
+    enemy.cellX = validPositions[i].first;
+    enemy.cellY = validPositions[i].second;
+
+    // Converter para coordenadas do mundo
+    pair<float, float> worldCoords = g_Maze->cellToWorldCoords(enemy.cellX, enemy.cellY);
+
+    enemy.position.x = worldCoords.first;
+    enemy.position.y = 0.0f;
+    enemy.position.z = worldCoords.second;
+    enemy.position.w = 1.0f;
+
+    // Verificar se não está muito perto do jogador (posição inicial)
+    float distanceToPlayer = glm::length(glm::vec3(enemy.position) - glm::vec3(g_PlayerPosition));
+    if (distanceToPlayer < 3.0f) {
+      // Pular esta posição se estiver muito perto do jogador
+      continue;
+    }
+
+    enemy.rotationY  = (rand() % 360) * 3.14159f / 180.0f;        // Rotação aleatória
+    enemy.colorType  = i % 2;                                     // Alterna entre vermelho (0) e azul (1)
+    enemy.waveOffset = (rand() % 100) / 100.0f * 2.0f * 3.14159f; // Offset aleatório para onda
+
+    // Inicializar variáveis de movimento
+    enemy.targetCellX = enemy.cellX;
+    enemy.targetCellY = enemy.cellY;
+    enemy.moveTimer   = 0.0f;
+    enemy.moveSpeed   = 1.0f + (rand() % 100) / 100.0f; // Velocidade entre 1.0 e 2.0
+    enemy.isMoving    = false;
+
+    // Inicializar variáveis de perseguição
+    enemy.detectionRadius = 5.0f; // Raio de 5 unidades para detectar o jogador
+    enemy.isChasing       = false;
+    enemy.chaseSpeed      = 0.5f; // Velocidade mais rápida quando perseguindo
+
+    g_Enemies.push_back(enemy);
+  }
 
   if (argc > 1) {
     ObjModel model(argv[1]);
@@ -461,6 +558,8 @@ int main(int argc, char* argv[]) {
 #define PLANE 2
 #define GHOST 3
 #define MAZE 4
+#define ENEMY_RED 5
+#define ENEMY_BLUE 6
 
     float currentFrameTime = glfwGetTime(); // Time in seconds
     deltaTime              = currentFrameTime - lastFrameTime;
@@ -473,6 +572,12 @@ int main(int argc, char* argv[]) {
     // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
     // glUniform1i(g_object_id_uniform, BUNNY);
     // DrawVirtualObject("the_bunny");
+
+    // Desenhamos o modelo da vaca
+    // model = Matrix_Translate(1.1f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + currentFrameTime * 0.1f);
+    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    // glUniform1i(g_object_id_uniform, BUNNY);
+    // DrawVirtualObject("cow");
 
 
     // Desenhamos o plano do chão
@@ -490,6 +595,128 @@ int main(int argc, char* argv[]) {
     glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
     glUniform1i(g_object_id_uniform, GHOST);
     DrawVirtualObject("ghost");
+
+    // Verificar colisões entre jogador e inimigos
+    CheckPlayerEnemyCollisions();
+
+    // Atualizar e desenhar todos os inimigos
+    for (Enemy& enemy : g_Enemies) {
+      // Verificar se o jogador está dentro do raio de detecção
+      float distanceToPlayer = glm::length(glm::vec3(enemy.position) - glm::vec3(g_PlayerPosition));
+      enemy.isChasing        = (distanceToPlayer <= enemy.detectionRadius);
+
+      // Atualizar movimento do inimigo
+      enemy.moveTimer += deltaTime;
+
+      if (enemy.isChasing) {
+        // Modo perseguição: mover diretamente em direção ao jogador
+        if (!enemy.isMoving && enemy.moveTimer >= enemy.chaseSpeed) {
+          // Calcular direção para o jogador
+          glm::vec3 directionToPlayer = glm::normalize(glm::vec3(g_PlayerPosition) - glm::vec3(enemy.position));
+
+          // Encontrar a célula mais próxima na direção do jogador
+          vector<pair<int, int>> neighbors = g_Maze->getValidNeighbors(enemy.cellX, enemy.cellY);
+
+          if (!neighbors.empty()) {
+            int   bestNeighborIndex = 0;
+            float bestDotProduct    = -2.0f; // Inicializar com valor muito baixo
+
+            for (int i = 0; i < neighbors.size(); i++) {
+              // Calcular direção para este vizinho
+              pair<float, float> neighborCoords      = maze.cellToWorldCoords(neighbors[i].first, neighbors[i].second);
+              glm::vec3          directionToNeighbor = glm::normalize(
+                           glm::vec3(neighborCoords.first, 0.0f, neighborCoords.second) - glm::vec3(enemy.position));
+
+              // Calcular produto escalar (quanto mais próximo de 1, melhor a direção)
+              float dotProduct = glm::dot(directionToPlayer, directionToNeighbor);
+
+              if (dotProduct > bestDotProduct) {
+                bestDotProduct    = dotProduct;
+                bestNeighborIndex = i;
+              }
+            }
+
+            enemy.targetCellX = neighbors[bestNeighborIndex].first;
+            enemy.targetCellY = neighbors[bestNeighborIndex].second;
+            enemy.isMoving    = true;
+            enemy.moveTimer   = 0.0f;
+
+            // Calcular rotação baseada na direção do movimento
+            float deltaX    = enemy.targetCellX - enemy.cellX;
+            float deltaZ    = enemy.targetCellY - enemy.cellY;
+            enemy.rotationY = atan2(deltaX, deltaZ);
+          }
+        }
+      } else {
+        // Modo patrulha: movimento aleatório
+        if (!enemy.isMoving && enemy.moveTimer >= enemy.moveSpeed) {
+          vector<pair<int, int>> neighbors = g_Maze->getValidNeighbors(enemy.cellX, enemy.cellY);
+
+          if (!neighbors.empty()) {
+            // Escolher direção aleatória
+            int randomIndex   = rand() % neighbors.size();
+            enemy.targetCellX = neighbors[randomIndex].first;
+            enemy.targetCellY = neighbors[randomIndex].second;
+            enemy.isMoving    = true;
+            enemy.moveTimer   = 0.0f;
+
+            // Calcular rotação baseada na direção do movimento
+            float deltaX    = enemy.targetCellX - enemy.cellX;
+            float deltaZ    = enemy.targetCellY - enemy.cellY;
+            enemy.rotationY = atan2(deltaX, deltaZ);
+          }
+        }
+      }
+
+      // Se está se movendo, interpolar posição
+      if (enemy.isMoving) {
+        float currentSpeed = enemy.isChasing ? enemy.chaseSpeed : enemy.moveSpeed;
+        float moveProgress = enemy.moveTimer / currentSpeed;
+
+        if (moveProgress >= 1.0f) {
+          // Movimento completo
+          enemy.cellX     = enemy.targetCellX;
+          enemy.cellY     = enemy.targetCellY;
+          enemy.isMoving  = false;
+          enemy.moveTimer = 0.0f;
+
+          // Atualizar posição final
+          pair<float, float> worldCoords = g_Maze->cellToWorldCoords(enemy.cellX, enemy.cellY);
+          enemy.position.x               = worldCoords.first;
+          enemy.position.z               = worldCoords.second;
+        } else {
+          // Interpolar posição entre célula atual e destino
+          pair<float, float> currentCoords = g_Maze->cellToWorldCoords(enemy.cellX, enemy.cellY);
+          pair<float, float> targetCoords  = g_Maze->cellToWorldCoords(enemy.targetCellX, enemy.targetCellY);
+
+          enemy.position.x = currentCoords.first + (targetCoords.first - currentCoords.first) * moveProgress;
+          enemy.position.z = currentCoords.second + (targetCoords.second - currentCoords.second) * moveProgress;
+        }
+      }
+
+      // Desenhar inimigo
+      float enemyWaveOffset = 0.2f * sin(currentFrameTime * 2.0f + enemy.waveOffset);
+      model                 = Matrix_Translate(enemy.position.x, enemy.position.y + enemyWaveOffset, enemy.position.z) *
+              Matrix_Rotate_Y(enemy.rotationY) *
+              Matrix_Scale(0.01f, 0.01f, 0.01f);
+
+      glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+
+      // Definir cor do inimigo baseado no tipo e estado
+      if (enemy.isChasing) {
+        // Inimigos perseguindo ficam vermelhos (mais agressivos)
+        glUniform1i(g_object_id_uniform, ENEMY_RED);
+      } else {
+        // Inimigos patrulhando mantêm sua cor original
+        if (enemy.colorType == 0) {
+          glUniform1i(g_object_id_uniform, ENEMY_RED);
+        } else {
+          glUniform1i(g_object_id_uniform, ENEMY_BLUE);
+        }
+      }
+
+      DrawVirtualObject("ghost");
+    }
 
     // model = Matrix_Translate(0.0f, -1.1f, 0.0f);
     // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
@@ -543,6 +770,22 @@ int main(int argc, char* argv[]) {
 
     // Restaurar transparência padrão para outros objetos
     glUniform1f(g_transparency_uniform, 1.0f);
+
+    // Renderizar informações do jogo (vidas, game over)
+    if (g_ShowInfoText) {
+      float lineheight = TextRendering_LineHeight(window);
+      float charwidth  = TextRendering_CharWidth(window);
+
+      // Mostrar vidas
+      char livesBuffer[50];
+      snprintf(livesBuffer, 50, "Vidas: %d", g_PlayerLives);
+      TextRendering_PrintString(window, livesBuffer, -1.0f + charwidth, 1.0f - lineheight, 1.0f);
+
+      // Mostrar game over se necessário
+      if (g_GameOver) {
+        TextRendering_PrintString(window, "GAME OVER! Pressione R para reiniciar", -0.5f, 0.0f, 2.0f);
+      }
+    }
 
     glfwSwapBuffers(window);
 
@@ -599,6 +842,121 @@ std::vector<std::string> GetWallsBetweenCameraAndPlayer() {
   }
 
   return wallsBetween;
+}
+
+// Função para verificar colisão entre jogador e inimigos
+void CheckPlayerEnemyCollisions() {
+  if (g_GameOver)
+    return;
+
+  // Criar esfera do jogador
+  collision::Sphere playerSphere;
+  playerSphere.center = glm::vec3(g_PlayerPosition.x, g_PlayerPosition.y, g_PlayerPosition.z);
+  playerSphere.radius = 0.4f; // Raio um pouco maior para detecção
+
+  // Verificar colisão com cada inimigo
+  for (const Enemy& enemy : g_Enemies) {
+    // Criar esfera do inimigo
+    collision::Sphere enemySphere;
+    enemySphere.center = glm::vec3(enemy.position.x, enemy.position.y, enemy.position.z);
+    enemySphere.radius = 0.3f;
+
+    // Verificar se há colisão
+    if (collision::testSphereSphere(playerSphere, enemySphere)) {
+      // Verificar se é um inimigo vermelho (perigoso)
+      if (enemy.colorType == 0 || enemy.isChasing) { // Inimigos vermelhos ou perseguindo
+        // Jogador morre
+        g_PlayerLives--;
+        printf("Jogador atingido! Vidas restantes: %d\n", g_PlayerLives);
+
+        if (g_PlayerLives <= 0) {
+          g_GameOver = true;
+          printf("Game Over!\n");
+        } else {
+          // Reset da posição do jogador
+          ResetPlayerPosition();
+        }
+
+        return; // Sair da função após primeira colisão
+      }
+    }
+  }
+}
+
+// Função para resetar posição do jogador
+void ResetPlayerPosition() {
+  g_PlayerPosition  = g_PlayerStartPosition;
+  g_PlayerRotationY = 0.0f;
+
+  // Atualizar câmera esférica se estiver sendo usada
+  if (camera == &sphericCamera) {
+    sphericCamera.setLookAt(g_PlayerPosition);
+  }
+
+  // Reposicionar inimigos
+  RespawnEnemies();
+
+  printf("Posição do jogador resetada.\n");
+}
+
+// Função para reposicionar inimigos
+void RespawnEnemies() {
+  // Limpar lista de inimigos atual
+  g_Enemies.clear();
+
+  if (!g_Maze)
+    return; // Verificar se o labirinto foi inicializado
+
+  // Obter todas as posições válidas do labirinto
+  vector<pair<int, int>> validPositions = g_Maze->getValidPositions();
+
+  // Embaralhar as posições para aleatoriedade
+  random_shuffle(validPositions.begin(), validPositions.end());
+
+  // Criar inimigos nas primeiras 8 posições válidas
+  int numEnemies = min(8, (int) validPositions.size());
+  for (int i = 0; i < numEnemies; i++) {
+    Enemy enemy;
+
+    // Obter posição da célula
+    enemy.cellX = validPositions[i].first;
+    enemy.cellY = validPositions[i].second;
+
+    // Converter para coordenadas do mundo
+    pair<float, float> worldCoords = g_Maze->cellToWorldCoords(enemy.cellX, enemy.cellY);
+
+    enemy.position.x = worldCoords.first;
+    enemy.position.y = 0.0f;
+    enemy.position.z = worldCoords.second;
+    enemy.position.w = 1.0f;
+
+    // Verificar se não está muito perto do jogador (posição inicial)
+    float distanceToPlayer = glm::length(glm::vec3(enemy.position) - glm::vec3(g_PlayerPosition));
+    if (distanceToPlayer < 3.0f) {
+      // Pular esta posição se estiver muito perto do jogador
+      continue;
+    }
+
+    enemy.rotationY  = (rand() % 360) * 3.14159f / 180.0f;        // Rotação aleatória
+    enemy.colorType  = i % 2;                                     // Alterna entre vermelho (0) e azul (1)
+    enemy.waveOffset = (rand() % 100) / 100.0f * 2.0f * 3.14159f; // Offset aleatório para onda
+
+    // Inicializar variáveis de movimento
+    enemy.targetCellX = enemy.cellX;
+    enemy.targetCellY = enemy.cellY;
+    enemy.moveTimer   = 0.0f;
+    enemy.moveSpeed   = 1.0f + (rand() % 100) / 100.0f; // Velocidade entre 1.0 e 2.0
+    enemy.isMoving    = false;
+
+    // Inicializar variáveis de perseguição
+    enemy.detectionRadius = 5.0f; // Raio de 5 unidades para detectar o jogador
+    enemy.isChasing       = false;
+    enemy.chaseSpeed      = 0.5f; // Velocidade mais rápida quando perseguindo
+
+    g_Enemies.push_back(enemy);
+  }
+
+  printf("Inimigos reposicionados: %d\n", (int) g_Enemies.size());
 }
 
 // Função que carrega uma imagem para ser utilizada como textura
@@ -742,6 +1100,8 @@ void LoadShadersFromFiles() {
   glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage1"), 1);
   glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage2"), 2);
   glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage3"), 3);
+  glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage4"), 4);
+  glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage5"), 5);
   glUseProgram(0);
 }
 
@@ -1453,6 +1813,14 @@ void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     // Se o usuário apertar a tecla H, fazemos um "toggle" do texto informativo mostrado na tela.
     if (key == GLFW_KEY_H && action == GLFW_PRESS) {
       g_ShowInfoText = !g_ShowInfoText;
+    }
+
+    // Se o usuário apertar a tecla R e o jogo acabou, reinicia o jogo
+    if (key == GLFW_KEY_R && action == GLFW_PRESS && g_GameOver) {
+      g_PlayerLives = 3;
+      g_GameOver    = false;
+      ResetPlayerPosition();
+      printf("Jogo reiniciado!\n");
     }
 
   } else if (action == GLFW_RELEASE) {

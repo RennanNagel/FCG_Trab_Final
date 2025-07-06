@@ -400,6 +400,82 @@ class MazeGenerator {
     return wallNames;
   }
 
+  // Função para obter posições válidas para movimento (células acessíveis)
+  vector<pair<int, int>> getValidPositions() const {
+    vector<pair<int, int>> validPositions;
+    
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        // Verificar se a célula tem pelo menos uma parede removida (é acessível)
+        bool hasOpenPath = false;
+        
+        // Verificar se alguma parede foi removida
+        for (int dir = 0; dir < 4; dir++) {
+          if (!grid[y][x].walls[dir]) {
+            hasOpenPath = true;
+            break;
+          }
+        }
+        
+        // Se tem caminho aberto, é uma posição válida
+        if (hasOpenPath) {
+          validPositions.push_back({x, y});
+        }
+      }
+    }
+    
+    return validPositions;
+  }
+
+  // Função para converter coordenadas de célula para coordenadas do mundo
+  pair<float, float> cellToWorldCoords(int cellX, int cellY) const {
+    const float cellSize = 2.0f;
+    float worldX = cellX * cellSize;
+    float worldZ = cellY * cellSize;
+    return {worldX, worldZ};
+  }
+
+  // Função para verificar se uma posição de célula é válida e acessível
+  bool isValidPosition(int x, int y) const {
+    if (x < 0 || x >= width || y < 0 || y >= height) {
+      return false;
+    }
+    
+    // Verificar se a célula tem pelo menos uma parede removida (é acessível)
+    for (int dir = 0; dir < 4; dir++) {
+      if (!grid[y][x].walls[dir]) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  // Função para obter vizinhos válidos de uma posição
+  vector<pair<int, int>> getValidNeighbors(int x, int y) const {
+    vector<pair<int, int>> neighbors;
+    
+    // Direções: Norte, Sul, Leste, Oeste
+    const int dx[4] = {0, 0, 1, -1};
+    const int dy[4] = {-1, 1, 0, 0};
+    
+    for (int dir = 0; dir < 4; dir++) {
+      int newX = x + dx[dir];
+      int newY = y + dy[dir];
+      
+      // Verificar se a nova posição é válida
+      if (isValidPosition(newX, newY)) {
+        // Verificar se não há parede bloqueando o caminho
+        if (!grid[y][x].walls[dir]) {
+          neighbors.push_back({newX, newY});
+        }
+      }
+    }
+    
+    return neighbors;
+  }
+
+
   void printMazeInfo() const {
     cout << "Labirinto gerado:\n";
     cout << "Dimensões: " << width << "x" << height << "\n";
