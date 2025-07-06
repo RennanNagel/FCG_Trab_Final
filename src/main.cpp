@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 
 // Headers abaixo são específicos de C++
 #include <map>
@@ -90,6 +91,9 @@ std::map<std::string, SceneObject> g_MazeWall;
 void PushMatrix(glm::mat4 M);
 void PopMatrix(glm::mat4& M);
 
+// Função para verificar quais paredes estão entre a câmera e o jogador
+std::vector<std::string> GetWallsBetweenCameraAndPlayer();
+
 // Declaração de várias funções utilizadas em main().  Essas estão definidas
 // logo após a definição de main() neste arquivo.
 void   BuildTrianglesAndAddToVirtualScene(ObjModel*);                        // Constrói representação de um ObjModel como malha de triângulos para renderização
@@ -134,6 +138,7 @@ void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 
 // Key Stuff definitions
 void processKeys(double currentTime);
+
 
 struct KeyState {
   bool   isPressed = false;
@@ -182,14 +187,6 @@ bool g_MiddleMouseButtonPressed = false; // Análogo para botão do meio do mous
 float g_CameraTheta    = 0.0f; // Ângulo no plano ZX em relação ao eixo Z
 float g_CameraPhi      = 0.0f; // Ângulo em relação ao eixo Y
 float g_CameraDistance = 3.5f; // Distância da câmera para a origem
-
-// Variáveis que controlam rotação do antebraço
-float g_ForearmAngleZ = 0.0f;
-float g_ForearmAngleX = 0.0f;
-
-// Variáveis que controlam translação do torso
-float g_TorsoPositionX = 0.0f;
-float g_TorsoPositionY = 0.0f;
 
 // Variável que controla o tipo de projeção utilizada: perspectiva ou ortográfica.
 bool g_UsePerspectiveProjection = true;
@@ -253,21 +250,25 @@ GLint g_ka_uniform;
 GLint g_ks_uniform;
 GLint g_q_uniform;
 GLint g_displacement_uniform;
+GLint g_transparency_uniform;
+
+// Armazena as paredes que estão entre a câmera e o jogador
+std::vector<std::string> g_WallsBetweenCameraAndPlayer;
 
 // Camera
-SphericCamera sphericCamera(3.0f,
+SphericCamera sphericCamera(5.0f,
                             g_CameraTheta,
                             g_CameraPhi,
                             g_CameraDistance,
                             glm::vec4(0.0f, 0.0f, 0.0f, 1.0f),
                             glm::vec4(0.0f, 1.0f, 0.0f, 0.0f),
                             -0.01f,
-                            -10.0f,
+                            -1000.0f,
                             3.141592 / 3.0f,
                             (float) WIDTH / HEIGHT,
                             true);
 
-FreeCamera freeCamera(3.0f,
+FreeCamera freeCamera(5.0f,
                       g_CameraTheta,
                       g_CameraPhi,
                       glm::vec4(-10.0f, 0.0f, 0.0f, 1.0f),
@@ -278,10 +279,66 @@ FreeCamera freeCamera(3.0f,
                       (float) WIDTH / HEIGHT,
                       true);
 
-Camera* camera = &freeCamera;
+Camera* camera = &sphericCamera;
+
+// Posição do jogador no mundo
+glm::vec4 g_PlayerPosition = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+// Posição inicial do jogador (para reset)
+glm::vec4 g_PlayerStartPosition = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+// Direção do jogador (ângulo de rotação em Y)
+float g_PlayerRotationY = 0.0f;
+
+// Sistema de vidas
+int  g_PlayerLives = 3;
+bool g_GameOver    = false;
+
+// Sistema de vitória
+bool g_PlayerWon = false;
+
+// Posição da vaca
+glm::vec4 g_CowPosition  = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+float     g_CowRotationY = 0.0f;
+
+// Estrutura para representar um inimigo
+struct Enemy {
+  glm::vec4 position;
+  float     rotationY;
+  int       colorType;  // 0 = vermelho, 1 = azul
+  float     waveOffset; // Para movimento de onda individual
+
+  // Variáveis para movimento
+  int   cellX, cellY;             // Posição atual na grade do labirinto
+  int   targetCellX, targetCellY; // Célula de destino
+  float moveTimer;                // Timer para controlar velocidade de movimento
+  float moveSpeed;                // Velocidade de movimento
+  bool  isMoving;                 // Se está se movendo para uma nova célula
+
+  // Variáveis para perseguição do jogador
+  float detectionRadius; // Raio de detecção do jogador
+  bool  isChasing;       // Se está perseguindo o jogador
+  float chaseSpeed;      // Velocidade quando perseguindo (mais rápida)
+};
+
+// Lista de inimigos
+std::vector<Enemy> g_Enemies;
+
+// Gerador de labirinto global
+MazeGenerator* g_Maze = nullptr;
 
 float deltaTime     = 0.0f;
 float lastFrameTime = 0.0f;
+
+// Função para verificar colisão entre jogador e inimigos
+void CheckPlayerEnemyCollisions();
+
+// Função para verificar colisão entre jogador e vaca
+void CheckPlayerCowCollision();
+
+// Função para resetar posição do jogador
+void ResetPlayerPosition();
+
+// Função para reposicionar inimigos
+void RespawnEnemies();
 
 int main(int argc, char* argv[]) {
   // Inicializamos a biblioteca GLFW, utilizada para criar uma janela do
@@ -354,9 +411,12 @@ int main(int argc, char* argv[]) {
   LoadShadersFromFiles();
 
   // Carregamos duas imagens para serem utilizadas como textura
-  LoadTextureImage("../../data/plane.png");         // TextureImage0
-  LoadTextureImage("../../data/floor_normals.png"); // TextureImage1
-  LoadTextureImage("../../data/maze.jpg");          // TextureImage2
+  LoadTextureImage("../../data/plane.png");              // TextureImage0
+  LoadTextureImage("../../data/floor_normals.png");      // TextureImage1
+  LoadTextureImage("../../data/maze.jpg");               // TextureImage2
+  LoadTextureImage("../../data/pacman_ghost_green.png"); // TextureImage3
+  LoadTextureImage("../../data/pacman_ghost_red.png");   // TextureImage4
+  LoadTextureImage("../../data/pacman_ghost_blue.png");  // TextureImage5
 
   // Construímos a representação de objetos geométricos através de malhas de triângulos
   // ObjModel spheremodel("../../data/sphere.obj");
@@ -371,7 +431,7 @@ int main(int argc, char* argv[]) {
   ComputeNormals(&planemodel);
   BuildTrianglesAndAddToVirtualScene(&planemodel);
   SceneObject* planeobj = &g_VirtualScene["the_plane"];
-  planeobj->transform   = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f) * Matrix_Scale(20, 1, 20);
+  planeobj->transform   = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f) * Matrix_Scale(50, 1, 50);
   planeobj->bbox_min    = glm::vec3(planeobj->transform * glm::vec4(planeobj->bbox_min, 1.0f));
   planeobj->bbox_max    = glm::vec3(planeobj->transform * glm::vec4(planeobj->bbox_max, 1.0f));
 
@@ -379,28 +439,35 @@ int main(int argc, char* argv[]) {
   // ComputeNormals(&maze);
   // BuildTrianglesAndAddToVirtualScene(&maze);
 
-  ObjModel wall("../../data/cube.obj");
-  ComputeNormals(&wall);
-  BuildTrianglesAndAddToVirtualScene(&wall);
-  SceneObject* wallobj = &g_VirtualScene["cube"];
-  wallobj->transform   = Matrix_Identity() * Matrix_Translate(10.0f, 0.0f, 0.0f) * Matrix_Scale(1.0f, 1.0f, 1.0f);
-  wallobj->bbox_min    = glm::vec3(wallobj->transform * glm::vec4(wallobj->bbox_min, 1.0f));
-  wallobj->bbox_max    = glm::vec3(wallobj->transform * glm::vec4(wallobj->bbox_max, 1.0f));
+  // ObjModel wall("../../data/cube.obj");
+  // ComputeNormals(&wall);
+  // BuildTrianglesAndAddToVirtualScene(&wall);
+  // SceneObject* wallobj = &g_VirtualScene["cube"];
+  // wallobj->transform   = Matrix_Identity() * Matrix_Translate(10.0f, 0.0f, 0.0f) * Matrix_Scale(1.0f, 1.0f, 1.0f);
+  // wallobj->bbox_min    = glm::vec3(wallobj->transform * glm::vec4(wallobj->bbox_min, 1.0f));
+  // wallobj->bbox_max    = glm::vec3(wallobj->transform * glm::vec4(wallobj->bbox_max, 1.0f));
 
-  // ObjModel pacmanmodel("../../data/pacman.obj");
-  // ComputeNormals(&pacmanmodel);
-  // BuildTrianglesAndAddToVirtualScene(&pacmanmodel);
+  ObjModel ghostmodel("../../data/pacman_ghost.obj");
+  ComputeNormals(&ghostmodel);
+  BuildTrianglesAndAddToVirtualScene(&ghostmodel);
+  SceneObject* ghost = &g_VirtualScene["ghost"];
+  ghost->transform   = Matrix_Identity() * Matrix_Scale(0.01, 0.01, 0.01);
 
+  ObjModel cowmodel("../../data/cow.obj");
+  ComputeNormals(&cowmodel);
+  BuildTrianglesAndAddToVirtualScene(&cowmodel);
+  SceneObject* cow = &g_VirtualScene["cow"];
 
   // Generate the maze
-  MazeGenerator maze(15, 15);
+  MazeGenerator maze(20, 20);
   maze.generateMaze();
+  g_Maze = &maze; // Armazenar referência global
 
   // Export each wall into a separate ObjModel
   auto mazeWalls = maze.exportToObjModels();
 
   for (auto& pair : mazeWalls) {
-    const std::string&         wallName  = pair.first;
+    // const std::string&         wallName  = pair.first;
     std::unique_ptr<ObjModel>& wallModel = pair.second;
 
     // Compute normals (you can skip if you add normals during export)
@@ -412,6 +479,73 @@ int main(int argc, char* argv[]) {
 
   // Guardar nomes das paredes para desenhar depois
   std::list<std::string> wallNames = maze.getWallNames();
+
+  // Inicializar inimigos em posições válidas do labirinto
+  srand(time(NULL));
+
+  // Obter todas as posições válidas do labirinto
+  vector<pair<int, int>> validPositions = maze.getValidPositions();
+
+  // Embaralhar as posições para aleatoriedade
+  random_shuffle(validPositions.begin(), validPositions.end());
+
+  // Posicionar a vaca em uma posição aleatória válida
+  if (!validPositions.empty()) {
+    // Usar a última posição para a vaca (longe dos inimigos)
+    int cowCellX = validPositions.back().first;
+    int cowCellY = validPositions.back().second;
+    validPositions.pop_back(); // Remover esta posição para não ser usada pelos inimigos
+
+    pair<float, float> cowWorldCoords = g_Maze->cellToWorldCoords(cowCellX, cowCellY);
+    g_CowPosition.x                   = cowWorldCoords.first;
+    g_CowPosition.y                   = 0.0f;
+    g_CowPosition.z                   = cowWorldCoords.second;
+    g_CowPosition.w                   = 1.0f;
+    cow->transform                    = Matrix_Translate(g_CowPosition.x, g_CowPosition.y, g_CowPosition.z);
+  }
+
+  // Criar inimigos nas primeiras 8 posições válidas
+  int numEnemies = min(8, (int) validPositions.size());
+  for (int i = 0; i < numEnemies; i++) {
+    Enemy enemy;
+
+    // Obter posição da célula
+    enemy.cellX = validPositions[i].first;
+    enemy.cellY = validPositions[i].second;
+
+    // Converter para coordenadas do mundo
+    pair<float, float> worldCoords = g_Maze->cellToWorldCoords(enemy.cellX, enemy.cellY);
+
+    enemy.position.x = worldCoords.first;
+    enemy.position.y = 0.0f;
+    enemy.position.z = worldCoords.second;
+    enemy.position.w = 1.0f;
+
+    // Verificar se não está muito perto do jogador (posição inicial)
+    float distanceToPlayer = glm::length(glm::vec3(enemy.position) - glm::vec3(g_PlayerPosition));
+    if (distanceToPlayer < 3.0f) {
+      // Pular esta posição se estiver muito perto do jogador
+      continue;
+    }
+
+    enemy.rotationY  = (rand() % 360) * 3.14159f / 180.0f;        // Rotação aleatória
+    enemy.colorType  = i % 2;                                     // Alterna entre vermelho (0) e azul (1)
+    enemy.waveOffset = (rand() % 100) / 100.0f * 2.0f * 3.14159f; // Offset aleatório para onda
+
+    // Inicializar variáveis de movimento
+    enemy.targetCellX = enemy.cellX;
+    enemy.targetCellY = enemy.cellY;
+    enemy.moveTimer   = 0.0f;
+    enemy.moveSpeed   = 1.0f + (rand() % 100) / 100.0f; // Velocidade entre 1.0 e 2.0
+    enemy.isMoving    = false;
+
+    // Inicializar variáveis de perseguição
+    enemy.detectionRadius = 5.0f; // Raio de 5 unidades para detectar o jogador
+    enemy.isChasing       = false;
+    enemy.chaseSpeed      = 0.5f; // Velocidade mais rápida quando perseguindo
+
+    g_Enemies.push_back(enemy);
+  }
 
   if (argc > 1) {
     ObjModel model(argv[1]);
@@ -431,11 +565,18 @@ int main(int argc, char* argv[]) {
   glFrontFace(GL_CCW);
 
 
+  // Habilitar blending para transparência
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
   // Ficamos em um loop infinito, renderizando, até que o usuário feche a janela
   while (!glfwWindowShouldClose(window)) {
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glUseProgram(g_GpuProgramID);
+
+    // Definir transparência padrão (opaco)
+    glUniform1f(g_transparency_uniform, 1.0f);
 
     glm::mat4 view       = camera->getMatrixView();
     glm::mat4 projection = camera->getMatrixProjection();
@@ -445,8 +586,11 @@ int main(int argc, char* argv[]) {
 #define SPHERE 0
 #define BUNNY 1
 #define PLANE 2
-#define PACMAN 3
+#define GHOST 3
 #define MAZE 4
+#define ENEMY_RED 5
+#define ENEMY_BLUE 6
+#define COW 7
 
     float currentFrameTime = glfwGetTime(); // Time in seconds
     deltaTime              = currentFrameTime - lastFrameTime;
@@ -460,10 +604,12 @@ int main(int argc, char* argv[]) {
     // glUniform1i(g_object_id_uniform, BUNNY);
     // DrawVirtualObject("the_bunny");
 
-    // model = Matrix_Scale(0.01f, 0.01f, 0.01f) * Matrix_Rotate_X(g_AngleX + (float) glfwGetTime() * 0.1f);
+    // Desenhamos o modelo da vaca
+    // model = Matrix_Translate(1.1f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + currentFrameTime * 0.1f);
     // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    // glUniform1i(g_object_id_uniform, PACMAN);
-    // DrawVirtualObject("pacman");
+    // glUniform1i(g_object_id_uniform, BUNNY);
+    // DrawVirtualObject("cow");
+
 
     // Desenhamos o plano do chão
     model = g_VirtualScene["the_plane"].transform;
@@ -471,23 +617,222 @@ int main(int argc, char* argv[]) {
     glUniform1i(g_object_id_uniform, PLANE);
     DrawVirtualObject("the_plane");
 
+    // Desenhar o fantasma na posição do jogador com rotação e movimento de onda
+    float waveOffset = 0.2f * sin(currentFrameTime * 2.0f);
+    model            = Matrix_Translate(g_PlayerPosition.x, g_PlayerPosition.y + waveOffset, g_PlayerPosition.z) *
+            Matrix_Rotate_Y(g_PlayerRotationY) *
+            Matrix_Scale(0.01f, 0.01f, 0.01f);
+
+    glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    glUniform1i(g_object_id_uniform, GHOST);
+    DrawVirtualObject("ghost");
+
+    // Desenhar a vaca com rotação lenta
+    g_CowRotationY += 0.5f * deltaTime; // Rotação lenta
+    model = Matrix_Translate(g_CowPosition.x, g_CowPosition.y, g_CowPosition.z) *
+            Matrix_Rotate_Y(g_CowRotationY);
+
+    glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    glUniform1i(g_object_id_uniform, COW);
+    DrawVirtualObject("cow");
+
+    // Verificar colisões entre jogador e inimigos
+    CheckPlayerEnemyCollisions();
+
+    // Verificar colisão entre jogador e vaca
+    CheckPlayerCowCollision();
+
+    // Atualizar e desenhar todos os inimigos
+    for (Enemy& enemy : g_Enemies) {
+      // Verificar se o jogador está dentro do raio de detecção
+      float distanceToPlayer = glm::length(glm::vec3(enemy.position) - glm::vec3(g_PlayerPosition));
+      enemy.isChasing        = (distanceToPlayer <= enemy.detectionRadius);
+
+      // Atualizar movimento do inimigo
+      enemy.moveTimer += deltaTime;
+
+      if (enemy.isChasing) {
+        // Modo perseguição: mover diretamente em direção ao jogador
+        if (!enemy.isMoving && enemy.moveTimer >= enemy.chaseSpeed) {
+          // Calcular direção para o jogador
+          glm::vec3 directionToPlayer = glm::normalize(glm::vec3(g_PlayerPosition) - glm::vec3(enemy.position));
+
+          // Encontrar a célula mais próxima na direção do jogador
+          vector<pair<int, int>> neighbors = g_Maze->getValidNeighbors(enemy.cellX, enemy.cellY);
+
+          if (!neighbors.empty()) {
+            int   bestNeighborIndex = 0;
+            float bestDotProduct    = -2.0f; // Inicializar com valor muito baixo
+
+            for (int i = 0; i < neighbors.size(); i++) {
+              // Calcular direção para este vizinho
+              pair<float, float> neighborCoords      = maze.cellToWorldCoords(neighbors[i].first, neighbors[i].second);
+              glm::vec3          directionToNeighbor = glm::normalize(
+                           glm::vec3(neighborCoords.first, 0.0f, neighborCoords.second) - glm::vec3(enemy.position));
+
+              // Calcular produto escalar (quanto mais próximo de 1, melhor a direção)
+              float dotProduct = glm::dot(directionToPlayer, directionToNeighbor);
+
+              if (dotProduct > bestDotProduct) {
+                bestDotProduct    = dotProduct;
+                bestNeighborIndex = i;
+              }
+            }
+
+            enemy.targetCellX = neighbors[bestNeighborIndex].first;
+            enemy.targetCellY = neighbors[bestNeighborIndex].second;
+            enemy.isMoving    = true;
+            enemy.moveTimer   = 0.0f;
+
+            // Calcular rotação baseada na direção do movimento
+            float deltaX    = enemy.targetCellX - enemy.cellX;
+            float deltaZ    = enemy.targetCellY - enemy.cellY;
+            enemy.rotationY = atan2(deltaX, deltaZ);
+          }
+        }
+      } else {
+        // Modo patrulha: movimento aleatório
+        if (!enemy.isMoving && enemy.moveTimer >= enemy.moveSpeed) {
+          vector<pair<int, int>> neighbors = g_Maze->getValidNeighbors(enemy.cellX, enemy.cellY);
+
+          if (!neighbors.empty()) {
+            // Escolher direção aleatória
+            int randomIndex   = rand() % neighbors.size();
+            enemy.targetCellX = neighbors[randomIndex].first;
+            enemy.targetCellY = neighbors[randomIndex].second;
+            enemy.isMoving    = true;
+            enemy.moveTimer   = 0.0f;
+
+            // Calcular rotação baseada na direção do movimento
+            float deltaX    = enemy.targetCellX - enemy.cellX;
+            float deltaZ    = enemy.targetCellY - enemy.cellY;
+            enemy.rotationY = atan2(deltaX, deltaZ);
+          }
+        }
+      }
+
+      // Se está se movendo, interpolar posição
+      if (enemy.isMoving) {
+        float currentSpeed = enemy.isChasing ? enemy.chaseSpeed : enemy.moveSpeed;
+        float moveProgress = enemy.moveTimer / currentSpeed;
+
+        if (moveProgress >= 1.0f) {
+          // Movimento completo
+          enemy.cellX     = enemy.targetCellX;
+          enemy.cellY     = enemy.targetCellY;
+          enemy.isMoving  = false;
+          enemy.moveTimer = 0.0f;
+
+          // Atualizar posição final
+          pair<float, float> worldCoords = g_Maze->cellToWorldCoords(enemy.cellX, enemy.cellY);
+          enemy.position.x               = worldCoords.first;
+          enemy.position.z               = worldCoords.second;
+        } else {
+          // Interpolar posição entre célula atual e destino
+          pair<float, float> currentCoords = g_Maze->cellToWorldCoords(enemy.cellX, enemy.cellY);
+          pair<float, float> targetCoords  = g_Maze->cellToWorldCoords(enemy.targetCellX, enemy.targetCellY);
+
+          enemy.position.x = currentCoords.first + (targetCoords.first - currentCoords.first) * moveProgress;
+          enemy.position.z = currentCoords.second + (targetCoords.second - currentCoords.second) * moveProgress;
+        }
+      }
+
+      // Desenhar inimigo
+      float enemyWaveOffset = 0.2f * sin(currentFrameTime * 2.0f + enemy.waveOffset);
+      model                 = Matrix_Translate(enemy.position.x, enemy.position.y + enemyWaveOffset, enemy.position.z) *
+              Matrix_Rotate_Y(enemy.rotationY) *
+              Matrix_Scale(0.01f, 0.01f, 0.01f);
+
+      glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+
+      // Definir cor do inimigo baseado no tipo e estado
+      if (enemy.isChasing) {
+        // Inimigos perseguindo ficam vermelhos (mais agressivos)
+        glUniform1i(g_object_id_uniform, ENEMY_RED);
+      } else {
+        // Inimigos patrulhando mantêm sua cor original
+        if (enemy.colorType == 0) {
+          glUniform1i(g_object_id_uniform, ENEMY_RED);
+        } else {
+          glUniform1i(g_object_id_uniform, ENEMY_BLUE);
+        }
+      }
+
+      DrawVirtualObject("ghost");
+    }
+
     // model = Matrix_Translate(0.0f, -1.1f, 0.0f);
     // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
     // glUniform1i(g_object_id_uniform, MAZE);
     // glUniform1i(g_displacement_uniform, 20.0f);
     // DrawVirtualObject("maze");
 
-    model = g_VirtualScene["cube"].transform;
-    glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform1i(g_object_id_uniform, PLANE);
-    DrawVirtualObject("cube");
+    // model = g_VirtualScene["cube"].transform;
+    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    // glUniform1i(g_object_id_uniform, PLANE);
+    // DrawVirtualObject("cube");
 
-    // Desenhar todas as paredes do labirinto
+    // Atualizar a lista de paredes entre a câmera e o jogador
+    g_WallsBetweenCameraAndPlayer = GetWallsBetweenCameraAndPlayer();
+
+    // Primeiro, desenhar todas as paredes opacas
     for (const std::string& wallName : wallNames) {
-      model = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f);
-      glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-      glUniform1i(g_object_id_uniform, MAZE);
-      DrawVirtualObject(wallName.c_str());
+      // Verificar se esta parede está entre a câmera e o jogador
+      bool isWallBetween = std::find(g_WallsBetweenCameraAndPlayer.begin(),
+                                     g_WallsBetweenCameraAndPlayer.end(),
+                                     wallName) != g_WallsBetweenCameraAndPlayer.end();
+
+      // Renderizar apenas paredes opacas nesta passada
+      if (!isWallBetween) {
+        model = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f);
+        glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+        glUniform1i(g_object_id_uniform, MAZE);
+        glUniform1f(g_transparency_uniform, 1.0f);
+        DrawVirtualObject(wallName.c_str());
+      }
+    }
+
+    // Depois, desenhar todas as paredes transparentes
+    glDepthMask(GL_FALSE); // Desabilitar escrita no depth buffer para transparentes
+    for (const std::string& wallName : wallNames) {
+      // Verificar se esta parede está entre a câmera e o jogador
+      bool isWallBetween = std::find(g_WallsBetweenCameraAndPlayer.begin(),
+                                     g_WallsBetweenCameraAndPlayer.end(),
+                                     wallName) != g_WallsBetweenCameraAndPlayer.end();
+
+      // Renderizar apenas paredes transparentes nesta passada
+      if (isWallBetween) {
+        model = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f);
+        glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+        glUniform1i(g_object_id_uniform, MAZE);
+        glUniform1f(g_transparency_uniform, 0.5f);
+        DrawVirtualObject(wallName.c_str());
+      }
+    }
+    glDepthMask(GL_TRUE); // Reabilitar escrita no depth buffer
+
+    // Restaurar transparência padrão para outros objetos
+    glUniform1f(g_transparency_uniform, 1.0f);
+
+    // Renderizar informações do jogo (vidas, game over)
+    if (g_ShowInfoText) {
+      float lineheight = TextRendering_LineHeight(window);
+      float charwidth  = TextRendering_CharWidth(window);
+
+      // Mostrar vidas
+      char livesBuffer[50];
+      snprintf(livesBuffer, 50, "Vidas: %d", g_PlayerLives);
+      TextRendering_PrintString(window, livesBuffer, -1.0f + charwidth, 1.0f - lineheight, 1.0f);
+
+      // Mostrar game over se necessário
+      if (g_GameOver) {
+        TextRendering_PrintString(window, "GAME OVER! Pressione R para reiniciar", -0.5f, 0.0f, 2.0f);
+      }
+
+      // Mostrar mensagem de vitória se necessário
+      if (g_PlayerWon) {
+        TextRendering_PrintString(window, "VOCE GANHOU! Pressione R para reiniciar", -0.5f, 0.2f, 2.0f);
+      }
     }
 
     glfwSwapBuffers(window);
@@ -503,6 +848,185 @@ int main(int argc, char* argv[]) {
 
   // Fim do programa
   return 0;
+}
+
+// Função para verificar quais paredes estão entre a câmera e o jogador
+std::vector<std::string> GetWallsBetweenCameraAndPlayer() {
+  std::vector<std::string> wallsBetween;
+
+  glm::vec3 cameraPos = glm::vec3(camera->getPosition().x, camera->getPosition().y, camera->getPosition().z);
+  glm::vec3 playerPos = glm::vec3(g_PlayerPosition.x, g_PlayerPosition.y, g_PlayerPosition.z);
+
+  // Direção principal da câmera para o jogador
+  glm::vec3 mainDirection = glm::normalize(playerPos - cameraPos);
+
+  // Obter o FOV da câmera (assumindo que está em radianos)
+  float fov     = 3.141592f / 3.0f; // Campo de visão da câmera
+  float halfFov = fov * 0.5f;
+
+  // Verificar cada parede
+  for (const auto& pair : g_VirtualScene) {
+    const std::string& name = pair.first;
+    const SceneObject& obj  = pair.second;
+
+    // Verificar apenas paredes do labirinto (que começam com "wall_")
+    if (name.find("wall_") != 0)
+      continue;
+
+    // Criar AABB do objeto
+    collision::AABB objAABB;
+    objAABB.min = glm::vec3(obj.transform * glm::vec4(obj.bbox_min, 1.0f));
+    objAABB.max = glm::vec3(obj.transform * glm::vec4(obj.bbox_max, 1.0f));
+
+    // Criar um raio da câmera para o centro da parede para verificar se há obstrução
+    collision::Line ray;
+    ray.start     = glm::vec3(camera->getPosition());
+    ray.direction = glm::vec3(camera->getViewVector());
+
+    // Se está no FOV, entre a câmera e o jogador, e o raio intersecta a parede
+    if (collision::testAABBLine(objAABB, ray)) {
+      wallsBetween.push_back(name);
+    }
+  }
+
+  return wallsBetween;
+}
+
+// Função para verificar colisão entre jogador e inimigos
+void CheckPlayerEnemyCollisions() {
+  if (g_GameOver)
+    return;
+
+  // Criar esfera do jogador
+  collision::Sphere playerSphere;
+  playerSphere.center = glm::vec3(g_PlayerPosition.x, g_PlayerPosition.y, g_PlayerPosition.z);
+  playerSphere.radius = 0.4f; // Raio um pouco maior para detecção
+
+  // Verificar colisão com cada inimigo
+  for (const Enemy& enemy : g_Enemies) {
+    // Criar esfera do inimigo
+    collision::Sphere enemySphere;
+    enemySphere.center = glm::vec3(enemy.position.x, enemy.position.y, enemy.position.z);
+    enemySphere.radius = 0.3f;
+
+    // Verificar se há colisão
+    if (collision::testSphereSphere(playerSphere, enemySphere)) {
+      // Verificar se é um inimigo vermelho (perigoso)
+      if (enemy.colorType == 0 || enemy.isChasing) { // Inimigos vermelhos ou perseguindo
+        // Jogador morre
+        g_PlayerLives--;
+        printf("Jogador atingido! Vidas restantes: %d\n", g_PlayerLives);
+
+        if (g_PlayerLives <= 0) {
+          g_GameOver = true;
+          printf("Game Over!\n");
+        } else {
+          // Reset da posição do jogador
+          ResetPlayerPosition();
+        }
+
+        return; // Sair da função após primeira colisão
+      }
+    }
+  }
+}
+
+// Função para resetar posição do jogador
+void ResetPlayerPosition() {
+  g_PlayerPosition  = g_PlayerStartPosition;
+  g_PlayerRotationY = 0.0f;
+
+  // Atualizar câmera esférica se estiver sendo usada
+  if (camera == &sphericCamera) {
+    sphericCamera.setLookAt(g_PlayerPosition);
+  }
+
+  // Reposicionar inimigos
+  RespawnEnemies();
+
+  printf("Posição do jogador resetada.\n");
+}
+
+// Função para verificar colisão entre jogador e vaca
+void CheckPlayerCowCollision() {
+  if (g_GameOver || g_PlayerWon)
+    return;
+
+  // Criar esfera do jogador
+  collision::Sphere playerSphere;
+  playerSphere.center = glm::vec3(g_PlayerPosition.x, g_PlayerPosition.y, g_PlayerPosition.z);
+  playerSphere.radius = 0.4f;
+
+  // Criar esfera da vaca
+  collision::Sphere cowSphere;
+  cowSphere.center = glm::vec3(g_CowPosition.x, g_CowPosition.y, g_CowPosition.z);
+  cowSphere.radius = 0.8f; // Raio maior para a vaca
+
+  // Verificar se há colisão
+  if (collision::testSphereSphere(playerSphere, cowSphere)) {
+    g_PlayerWon = true;
+    printf("Jogador ganhou! Tocou na vaca!\n");
+  }
+}
+
+// Função para reposicionar inimigos
+void RespawnEnemies() {
+  // Limpar lista de inimigos atual
+  g_Enemies.clear();
+
+  if (!g_Maze)
+    return; // Verificar se o labirinto foi inicializado
+
+  // Obter todas as posições válidas do labirinto
+  vector<pair<int, int>> validPositions = g_Maze->getValidPositions();
+
+  // Embaralhar as posições para aleatoriedade
+  random_shuffle(validPositions.begin(), validPositions.end());
+
+  // Criar inimigos nas primeiras 8 posições válidas
+  int numEnemies = min(8, (int) validPositions.size());
+  for (int i = 0; i < numEnemies; i++) {
+    Enemy enemy;
+
+    // Obter posição da célula
+    enemy.cellX = validPositions[i].first;
+    enemy.cellY = validPositions[i].second;
+
+    // Converter para coordenadas do mundo
+    pair<float, float> worldCoords = g_Maze->cellToWorldCoords(enemy.cellX, enemy.cellY);
+
+    enemy.position.x = worldCoords.first;
+    enemy.position.y = 0.0f;
+    enemy.position.z = worldCoords.second;
+    enemy.position.w = 1.0f;
+
+    // Verificar se não está muito perto do jogador (posição inicial)
+    float distanceToPlayer = glm::length(glm::vec3(enemy.position) - glm::vec3(g_PlayerPosition));
+    if (distanceToPlayer < 3.0f) {
+      // Pular esta posição se estiver muito perto do jogador
+      continue;
+    }
+
+    enemy.rotationY  = (rand() % 360) * 3.14159f / 180.0f;        // Rotação aleatória
+    enemy.colorType  = i % 2;                                     // Alterna entre vermelho (0) e azul (1)
+    enemy.waveOffset = (rand() % 100) / 100.0f * 2.0f * 3.14159f; // Offset aleatório para onda
+
+    // Inicializar variáveis de movimento
+    enemy.targetCellX = enemy.cellX;
+    enemy.targetCellY = enemy.cellY;
+    enemy.moveTimer   = 0.0f;
+    enemy.moveSpeed   = 1.0f + (rand() % 100) / 100.0f; // Velocidade entre 1.0 e 2.0
+    enemy.isMoving    = false;
+
+    // Inicializar variáveis de perseguição
+    enemy.detectionRadius = 5.0f; // Raio de 5 unidades para detectar o jogador
+    enemy.isChasing       = false;
+    enemy.chaseSpeed      = 0.5f; // Velocidade mais rápida quando perseguindo
+
+    g_Enemies.push_back(enemy);
+  }
+
+  printf("Inimigos reposicionados: %d\n", (int) g_Enemies.size());
 }
 
 // Função que carrega uma imagem para ser utilizada como textura
@@ -637,6 +1161,7 @@ void LoadShadersFromFiles() {
   g_ks_uniform           = glGetUniformLocation(g_GpuProgramID, "ks");
   g_q_uniform            = glGetUniformLocation(g_GpuProgramID, "q");
   g_displacement_uniform = glGetUniformLocation(g_GpuProgramID, "displacementScale");
+  g_transparency_uniform = glGetUniformLocation(g_GpuProgramID, "transparency");
 
 
   // Variáveis em "shader_fragment.glsl" para acesso das imagens de textura
@@ -644,6 +1169,9 @@ void LoadShadersFromFiles() {
   glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage0"), 0);
   glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage1"), 1);
   glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage2"), 2);
+  glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage3"), 3);
+  glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage4"), 4);
+  glUniform1i(glGetUniformLocation(g_GpuProgramID, "TextureImage5"), 5);
   glUseProgram(0);
 }
 
@@ -741,6 +1269,7 @@ void BuildTrianglesAndAddToVirtualScene(ObjModel* model) {
     theobject.name                   = model->shapes[shape].name;
     theobject.rendering_mode         = GL_TRIANGLES;
     theobject.vertex_array_object_id = vertex_array_object_id;
+    theobject.transform              = Matrix_Identity();
 
     if (model->materials.empty()) {
       // OBJ has no .mtl — just empty
@@ -806,6 +1335,7 @@ void BuildTrianglesAndAddToVirtualScene(ObjModel* model) {
     for (auto& pair : group_map) {
       theobject.groups.push_back(pair.second);
     }
+
 
     g_VirtualScene[theobject.name] = theobject;
   }
@@ -1043,25 +1573,149 @@ void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
   }
 }
 
+
+void tryPlayerMove(glm::vec4 movement) {
+  // Salvar posição atual do jogador
+  glm::vec4 oldPlayerPosition = g_PlayerPosition;
+
+  // Tentar mover o jogador
+  g_PlayerPosition += movement;
+
+  // Criar uma esfera representando o jogador
+  collision::Sphere playerSphere;
+  playerSphere.center = glm::vec3(g_PlayerPosition.x, g_PlayerPosition.y, g_PlayerPosition.z);
+  playerSphere.radius = 0.3f; // Raio do jogador (maior que a câmera)
+
+  // Verificar colisão com todos os objetos da cena
+  bool collision = false;
+  for (const auto& pair : g_VirtualScene) {
+    const SceneObject& obj = pair.second;
+
+    // Pular o fantasma (não colidir consigo mesmo)
+    if (pair.first == "ghost")
+      continue;
+
+    // Criar AABB do objeto
+    collision::AABB objAABB;
+    objAABB.min = glm::vec3(obj.transform * glm::vec4(obj.bbox_min, 1.0f));
+    objAABB.max = glm::vec3(obj.transform * glm::vec4(obj.bbox_max, 1.0f));
+
+    // Testar colisão entre o jogador (esfera) e o objeto (AABB)
+    if (collision::testAABBSphere(objAABB, playerSphere)) {
+      collision = true;
+      break;
+    }
+  }
+
+  // Se houve colisão, restaurar posição anterior
+  if (collision) {
+    g_PlayerPosition = oldPlayerPosition;
+  }
+}
+
+void trySphericMove(void (*callback)(float deltaTime)) {
+  // Para câmera esférica, salvar distância atual
+  float oldDistance = camera->getDistance();
+
+  // Tentar mover a câmera
+  callback(deltaTime);
+
+  // Restaurar a distância original para manter constante
+  camera->setDistance(oldDistance);
+
+  // Criar uma esfera representando a câmera
+  collision::Sphere cameraSphere;
+  cameraSphere.center = glm::vec3(camera->getPosition().x,
+                                  camera->getPosition().y,
+                                  camera->getPosition().z);
+  cameraSphere.radius = 0.1f;
+
+  // Verificar colisão com todas as paredes do labirinto
+  bool collision = false;
+  for (const auto& pair : g_VirtualScene) {
+    const SceneObject& obj = pair.second;
+
+    // Verificar apenas paredes do labirinto (que começam com "wall_")
+    if (pair.first.find("wall_") != 0)
+      continue;
+
+    // Criar AABB do objeto
+    collision::AABB objAABB;
+    objAABB.min = glm::vec3(obj.transform * glm::vec4(obj.bbox_min, 1.0f));
+    objAABB.max = glm::vec3(obj.transform * glm::vec4(obj.bbox_max, 1.0f));
+
+    // Testar colisão entre a câmera (esfera) e o objeto(AABB)
+    if (collision::testAABBSphere(objAABB, cameraSphere)) {
+      collision = true;
+      break;
+    }
+  }
+
+  // Se houve colisão na câmera esférica, mover para mais perto do centro
+  if (collision) {
+    // Reduzir a distância em pequenos incrementos até não haver mais colisão
+    float newDistance = oldDistance * 0.95f; // Reduz 5% da distância
+    camera->setDistance(newDistance);
+
+    // Verificar se ainda há colisão após reduzir a distância
+    cameraSphere.center = glm::vec3(camera->getPosition().x,
+                                    camera->getPosition().y,
+                                    camera->getPosition().z);
+
+    // Se ainda há colisão, continuar reduzindo
+    bool stillColliding = false;
+    for (const auto& pair : g_VirtualScene) {
+      const SceneObject& obj = pair.second;
+
+      // Verificar apenas paredes do labirinto
+      if (pair.first.find("wall_") != 0)
+        continue;
+
+      collision::AABB objAABB;
+      objAABB.min = glm::vec3(obj.transform * glm::vec4(obj.bbox_min, 1.0f));
+      objAABB.max = glm::vec3(obj.transform * glm::vec4(obj.bbox_max, 1.0f));
+
+      if (collision::testAABBSphere(objAABB, cameraSphere)) {
+        stillColliding = true;
+        break;
+      }
+    }
+
+    // Se ainda há colisão, restaurar distância original
+    if (stillColliding) {
+      camera->setDistance(oldDistance);
+    }
+  }
+}
+
 void processCursor(double xpos, double ypos) {
   if (g_LeftMouseButtonPressed) {
-    float newTheta = camera->getTheta();
-    newTheta += 0.01f * g_CursorDeltaX;
-    camera->setTheta(newTheta);
+    // Verificar se é câmera esférica ou livre
+    bool isSphericalCamera = (camera == &sphericCamera);
 
-    float newPhi = camera->getPhi();
-    newPhi -= 0.01f * g_CursorDeltaY;
-    camera->setPhi(newPhi);
-  }
+    if (isSphericalCamera) {
+      // Para câmera esférica, usar detecção de colisão
+      trySphericMove([](float dt) {
+        float newTheta = camera->getTheta();
+        newTheta -= 0.01f * g_CursorDeltaX;
+        camera->setTheta(newTheta);
+      });
 
-  if (g_RightMouseButtonPressed) {
-    g_ForearmAngleZ -= 0.01f * g_CursorDeltaX;
-    g_ForearmAngleX += 0.01f * g_CursorDeltaY;
-  }
+      trySphericMove([](float dt) {
+        float newPhi = camera->getPhi();
+        newPhi -= 0.01f * g_CursorDeltaY;
+        camera->setPhi(newPhi);
+      });
+    } else {
+      // Para câmera livre, comportamento normal
+      float newTheta = camera->getTheta();
+      newTheta += 0.01f * g_CursorDeltaX;
+      camera->setTheta(newTheta);
 
-  if (g_MiddleMouseButtonPressed) {
-    g_TorsoPositionX += 0.01f * g_CursorDeltaX;
-    g_TorsoPositionY -= 0.01f * g_CursorDeltaY;
+      float newPhi = camera->getPhi();
+      newPhi -= 0.01f * g_CursorDeltaY;
+      camera->setPhi(newPhi);
+    }
   }
 
   g_CursorDeltaX = 0.0f;
@@ -1111,8 +1765,8 @@ void tryMove(void (*callback)(float deltaTime)) {
 
     // Criar AABB do objeto
     collision::AABB objAABB;
-    objAABB.min = obj.bbox_min;
-    objAABB.max = obj.bbox_max;
+    objAABB.min = glm::vec3(obj.transform * glm::vec4(obj.bbox_min, 1.0f));
+    objAABB.max = glm::vec3(obj.transform * glm::vec4(obj.bbox_max, 1.0f));
 
     // Testar colisão entre a câmera (esfera) e o objeto(AABB)
     if (collision::testAABBSphere(objAABB, cameraSphere)) {
@@ -1127,6 +1781,7 @@ void tryMove(void (*callback)(float deltaTime)) {
   }
 }
 
+
 void processKeys(double currentTime) {
   for (std::unordered_map<int, KeyState>::iterator it = keys.begin(); it != keys.end(); ++it) {
     int      key       = it->first;
@@ -1135,14 +1790,65 @@ void processKeys(double currentTime) {
     if (key_state.isPressed) {
       double& lastTime = key_state.lastTime;
       if (currentTime - lastTime >= repeatDelay) {
+        // Verificar se é câmera esférica ou livre
+        bool isSphericalCamera = (camera == &sphericCamera);
+
         if (key == GLFW_KEY_W) {
-          tryMove([](float dt) { camera->MoveForward(dt); });
+          if (isSphericalCamera) {
+            // Obter vetor de visão da câmera
+            glm::vec4 viewDirection = glm::normalize(sphericCamera.getViewVector());
+            // Projetar no plano horizontal (Y = 0)
+            glm::vec4 forward  = glm::normalize(glm::vec4(viewDirection.x, 0.0f, viewDirection.z, 0.0f));
+            glm::vec4 movement = forward * 5.0f * deltaTime;
+            tryPlayerMove(movement);
+            // Calcular rotação baseada na direção do movimento
+            g_PlayerRotationY = atan2(forward.x, forward.z);
+            sphericCamera.setLookAt(g_PlayerPosition);
+          } else {
+            tryMove([](float dt) { camera->MoveForward(dt); });
+          }
         } else if (key == GLFW_KEY_A) {
-          tryMove([](float dt) { camera->MoveLeft(dt); });
+          if (isSphericalCamera) {
+            // Obter vetor de visão da câmera
+            glm::vec4 viewDirection = glm::normalize(sphericCamera.getViewVector());
+            // Calcular vetor perpendicular à esquerda (produto vetorial com Y)
+            glm::vec4 left     = glm::normalize(glm::vec4(viewDirection.z, 0.0f, -viewDirection.x, 0.0f));
+            glm::vec4 movement = left * 5.0f * deltaTime;
+            tryPlayerMove(movement);
+            // Calcular rotação baseada na direção do movimento
+            g_PlayerRotationY = atan2(left.x, left.z);
+            sphericCamera.setLookAt(g_PlayerPosition);
+          } else {
+            tryMove([](float dt) { camera->MoveLeft(dt); });
+          }
         } else if (key == GLFW_KEY_S) {
-          tryMove([](float dt) { camera->MoveBackward(dt); });
+          if (isSphericalCamera) {
+            // Obter vetor de visão da câmera (direção oposta)
+            glm::vec4 viewDirection = glm::normalize(sphericCamera.getViewVector());
+            // Projetar no plano horizontal e inverter
+            glm::vec4 backward = -glm::normalize(glm::vec4(viewDirection.x, 0.0f, viewDirection.z, 0.0f));
+            glm::vec4 movement = backward * 5.0f * deltaTime;
+            tryPlayerMove(movement);
+            // Calcular rotação baseada na direção do movimento
+            g_PlayerRotationY = atan2(backward.x, backward.z);
+            sphericCamera.setLookAt(g_PlayerPosition);
+          } else {
+            tryMove([](float dt) { camera->MoveBackward(dt); });
+          }
         } else if (key == GLFW_KEY_D) {
-          tryMove([](float dt) { camera->MoveRight(dt); });
+          if (isSphericalCamera) {
+            // Obter vetor de visão da câmera
+            glm::vec4 viewDirection = glm::normalize(sphericCamera.getViewVector());
+            // Calcular vetor perpendicular à direita (produto vetorial com Y)
+            glm::vec4 right    = glm::normalize(glm::vec4(-viewDirection.z, 0.0f, viewDirection.x, 0.0f));
+            glm::vec4 movement = right * 5.0f * deltaTime;
+            tryPlayerMove(movement);
+            // Calcular rotação baseada na direção do movimento
+            g_PlayerRotationY = atan2(right.x, right.z);
+            sphericCamera.setLookAt(g_PlayerPosition);
+          } else {
+            tryMove([](float dt) { camera->MoveRight(dt); });
+          }
         }
 
         lastTime = currentTime;
@@ -1177,6 +1883,32 @@ void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     // Se o usuário apertar a tecla H, fazemos um "toggle" do texto informativo mostrado na tela.
     if (key == GLFW_KEY_H && action == GLFW_PRESS) {
       g_ShowInfoText = !g_ShowInfoText;
+    }
+
+    // Se o usuário apertar a tecla R e o jogo acabou ou ganhou, reinicia o jogo
+    if (key == GLFW_KEY_R && action == GLFW_PRESS && (g_GameOver || g_PlayerWon)) {
+      g_PlayerLives = 3;
+      g_GameOver    = false;
+      g_PlayerWon   = false;
+      ResetPlayerPosition();
+
+      // Reposicionar a vaca em uma nova posição aleatória
+      if (g_Maze) {
+        vector<pair<int, int>> validPositions = g_Maze->getValidPositions();
+        if (!validPositions.empty()) {
+          random_shuffle(validPositions.begin(), validPositions.end());
+          int cowCellX = validPositions[0].first;
+          int cowCellY = validPositions[0].second;
+
+          pair<float, float> cowWorldCoords = g_Maze->cellToWorldCoords(cowCellX, cowCellY);
+          g_CowPosition.x                   = cowWorldCoords.first;
+          g_CowPosition.y                   = 0.0f;
+          g_CowPosition.z                   = cowWorldCoords.second;
+          g_CowPosition.w                   = 1.0f;
+        }
+      }
+
+      printf("Jogo reiniciado!\n");
     }
 
   } else if (action == GLFW_RELEASE) {

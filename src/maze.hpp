@@ -121,7 +121,9 @@ class MazeGenerator {
     stack.push_back({startX, startY});
 
     while (!stack.empty()) {
-      auto [currentX, currentY] = stack.back();
+      auto current  = stack.back();
+      int  currentX = current.first;
+      int  currentY = current.second;
 
       vector<int> neighbors;
 
@@ -159,8 +161,7 @@ class MazeGenerator {
   }
 
   void createMultipleEntrances() {
-    // Criar 4-8 entradas/saídas aleatórias nas bordas
-    int numEntrances = 4 + (rng() % 5); // 4 a 8 entradas
+    int numEntrances = 8 + (rng() % 8); // 8 a 16 entradas
 
     for (int i = 0; i < numEntrances; i++) {
       int side = rng() % 4; // 0=norte, 1=sul, 2=leste, 3=oeste
@@ -270,23 +271,23 @@ class MazeGenerator {
       // Material para as paredes
       tinyobj::material_t material;
       material.name = "wall_material";
-      
+
       // Propriedades do material
       material.ambient[0] = 0.2f;
       material.ambient[1] = 0.2f;
       material.ambient[2] = 0.2f;
-      
+
       material.diffuse[0] = 0.8f;
       material.diffuse[1] = 0.8f;
       material.diffuse[2] = 0.8f;
-      
+
       material.specular[0] = 0.1f;
       material.specular[1] = 0.1f;
       material.specular[2] = 0.1f;
-      
+
       material.shininess = 32.0f;
-      material.dissolve = 1.0f;
-      
+      material.dissolve  = 1.0f;
+
       objModel->materials.push_back(material);
 
       tinyobj::shape_t shape;
@@ -298,59 +299,57 @@ class MazeGenerator {
 
       // Vertices do cubo
       vector<float> vertices = {
-          wall.x - hw, wall.y - hh, wall.z - hd,  // 0
-          wall.x + hw, wall.y - hh, wall.z - hd,  // 1
-          wall.x + hw, wall.y + hh, wall.z - hd,  // 2
-          wall.x - hw, wall.y + hh, wall.z - hd,  // 3
-          wall.x - hw, wall.y - hh, wall.z + hd,  // 4
-          wall.x + hw, wall.y - hh, wall.z + hd,  // 5
-          wall.x + hw, wall.y + hh, wall.z + hd,  // 6
-          wall.x - hw, wall.y + hh, wall.z + hd   // 7
+          wall.x - hw, wall.y - hh, wall.z - hd, // 0
+          wall.x + hw, wall.y - hh, wall.z - hd, // 1
+          wall.x + hw, wall.y + hh, wall.z - hd, // 2
+          wall.x - hw, wall.y + hh, wall.z - hd, // 3
+          wall.x - hw, wall.y - hh, wall.z + hd, // 4
+          wall.x + hw, wall.y - hh, wall.z + hd, // 5
+          wall.x + hw, wall.y + hh, wall.z + hd, // 6
+          wall.x - hw, wall.y + hh, wall.z + hd  // 7
       };
       objModel->attrib.vertices.insert(objModel->attrib.vertices.end(), vertices.begin(), vertices.end());
 
       // Normais para cada face do cubo
       vector<float> normals = {
           // Face frontal (z-)
-          0.0f, 0.0f, -1.0f,  0.0f, 0.0f, -1.0f,  0.0f, 0.0f, -1.0f,  0.0f, 0.0f, -1.0f,
+          0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f,
           // Face traseira (z+)
-          0.0f, 0.0f, 1.0f,   0.0f, 0.0f, 1.0f,   0.0f, 0.0f, 1.0f,   0.0f, 0.0f, 1.0f,
+          0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
           // Face esquerda (x-)
-          -1.0f, 0.0f, 0.0f,  -1.0f, 0.0f, 0.0f,  -1.0f, 0.0f, 0.0f,  -1.0f, 0.0f, 0.0f,
+          -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f,
           // Face direita (x+)
-          1.0f, 0.0f, 0.0f,   1.0f, 0.0f, 0.0f,   1.0f, 0.0f, 0.0f,   1.0f, 0.0f, 0.0f,
+          1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
           // Face inferior (y-)
-          0.0f, -1.0f, 0.0f,  0.0f, -1.0f, 0.0f,  0.0f, -1.0f, 0.0f,  0.0f, -1.0f, 0.0f,
+          0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, -1.0f, 0.0f,
           // Face superior (y+)
-          0.0f, 1.0f, 0.0f,   0.0f, 1.0f, 0.0f,   0.0f, 1.0f, 0.0f,   0.0f, 1.0f, 0.0f
-      };
+          0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f};
       objModel->attrib.normals.insert(objModel->attrib.normals.end(), normals.begin(), normals.end());
 
       // Coordenadas de textura corrigidas para orientação consistente
       vector<float> texcoords = {
           // Face frontal (z-) - vértices 0,3,2,1
-          0.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f,  1.0f, 0.0f,
+          0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f,
           // Face traseira (z+) - vértices 4,5,6,7
-          1.0f, 0.0f,  0.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f,
+          1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
           // Face esquerda (x-) - vértices 0,4,7,3
-          1.0f, 0.0f,  0.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f,
+          1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f,
           // Face direita (x+) - vértices 2,6,5,1
-          0.0f, 1.0f,  1.0f, 1.0f,  1.0f, 0.0f,  0.0f, 0.0f,
+          0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
           // Face inferior (y-) - vértices 0,1,5,4
-          0.0f, 1.0f,  1.0f, 1.0f,  1.0f, 0.0f,  0.0f, 0.0f,
+          0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
           // Face superior (y+) - vértices 7,6,2,3
-          0.0f, 0.0f,  1.0f, 0.0f,  1.0f, 1.0f,  0.0f, 1.0f
-      };
+          0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f};
       objModel->attrib.texcoords.insert(objModel->attrib.texcoords.end(), texcoords.begin(), texcoords.end());
 
       // Faces do cubo com ordem correta para normais apontando para fora
       const int faces[6][4] = {
-          {0, 3, 2, 1},   // Face frontal (z-) - ordem anti-horária
-          {4, 5, 6, 7},   // Face traseira (z+) - ordem anti-horária  
-          {0, 4, 7, 3},   // Face esquerda (x-) - ordem anti-horária
-          {2, 6, 5, 1},   // Face direita (x+) - ordem anti-horária
-          {0, 1, 5, 4},   // Face inferior (y-) - ordem anti-horária
-          {7, 6, 2, 3}    // Face superior (y+) - ordem anti-horária
+          {0, 3, 2, 1}, // Face frontal (z-) - ordem anti-horária
+          {4, 5, 6, 7}, // Face traseira (z+) - ordem anti-horária
+          {0, 4, 7, 3}, // Face esquerda (x-) - ordem anti-horária
+          {2, 6, 5, 1}, // Face direita (x+) - ordem anti-horária
+          {0, 1, 5, 4}, // Face inferior (y-) - ordem anti-horária
+          {7, 6, 2, 3}  // Face superior (y+) - ordem anti-horária
       };
 
       for (int f = 0; f < 6; ++f) {
@@ -360,8 +359,8 @@ class MazeGenerator {
         int v3 = faces[f][3];
 
         // Índices das normais e texturas para cada face
-        int n_base = f * 4;  // 4 normais por face
-        int t_base = f * 4;  // 4 coordenadas de textura por face
+        int n_base = f * 4; // 4 normais por face
+        int t_base = f * 4; // 4 coordenadas de textura por face
 
         // Primeiro triângulo da face (ordem anti-horária)
         shape.mesh.indices.push_back({v0, t_base + 0, n_base + 0});
@@ -400,6 +399,82 @@ class MazeGenerator {
     }
     return wallNames;
   }
+
+  // Função para obter posições válidas para movimento (células acessíveis)
+  vector<pair<int, int>> getValidPositions() const {
+    vector<pair<int, int>> validPositions;
+    
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        // Verificar se a célula tem pelo menos uma parede removida (é acessível)
+        bool hasOpenPath = false;
+        
+        // Verificar se alguma parede foi removida
+        for (int dir = 0; dir < 4; dir++) {
+          if (!grid[y][x].walls[dir]) {
+            hasOpenPath = true;
+            break;
+          }
+        }
+        
+        // Se tem caminho aberto, é uma posição válida
+        if (hasOpenPath) {
+          validPositions.push_back({x, y});
+        }
+      }
+    }
+    
+    return validPositions;
+  }
+
+  // Função para converter coordenadas de célula para coordenadas do mundo
+  pair<float, float> cellToWorldCoords(int cellX, int cellY) const {
+    const float cellSize = 2.0f;
+    float worldX = cellX * cellSize;
+    float worldZ = cellY * cellSize;
+    return {worldX, worldZ};
+  }
+
+  // Função para verificar se uma posição de célula é válida e acessível
+  bool isValidPosition(int x, int y) const {
+    if (x < 0 || x >= width || y < 0 || y >= height) {
+      return false;
+    }
+    
+    // Verificar se a célula tem pelo menos uma parede removida (é acessível)
+    for (int dir = 0; dir < 4; dir++) {
+      if (!grid[y][x].walls[dir]) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  // Função para obter vizinhos válidos de uma posição
+  vector<pair<int, int>> getValidNeighbors(int x, int y) const {
+    vector<pair<int, int>> neighbors;
+    
+    // Direções: Norte, Sul, Leste, Oeste
+    const int dx[4] = {0, 0, 1, -1};
+    const int dy[4] = {-1, 1, 0, 0};
+    
+    for (int dir = 0; dir < 4; dir++) {
+      int newX = x + dx[dir];
+      int newY = y + dy[dir];
+      
+      // Verificar se a nova posição é válida
+      if (isValidPosition(newX, newY)) {
+        // Verificar se não há parede bloqueando o caminho
+        if (!grid[y][x].walls[dir]) {
+          neighbors.push_back({newX, newY});
+        }
+      }
+    }
+    
+    return neighbors;
+  }
+
 
   void printMazeInfo() const {
     cout << "Labirinto gerado:\n";

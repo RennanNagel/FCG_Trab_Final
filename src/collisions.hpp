@@ -131,6 +131,12 @@ bool testAABBLine(const AABB& aabb, const Line& line) {
   return true;
 }
 
+// Função para testar colisão entre duas esferas
+bool testSphereSphere(const Sphere& sphere1, const Sphere& sphere2) {
+  float distance = glm::length(sphere1.center - sphere2.center);
+  return distance <= (sphere1.radius + sphere2.radius);
+}
+
 } // namespace collision
 
 #endif // COLLISIONS_HPP

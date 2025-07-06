@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cstdio>
+#include <iostream>
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
 #include <glm/gtx/string_cast.hpp>
@@ -30,6 +31,8 @@ class Camera {
   virtual void      MoveRight(float deltaTime)          = 0;
   virtual void      MoveUpwards(float deltaTime)        = 0;
   virtual void      MoveDownwards(float deltaTime)      = 0;
+  virtual void      setLookAt(glm::vec4 lookAt)         = 0;
+  virtual glm::vec4 getViewVector()                     = 0;
 
   private:
   float Radius;
@@ -54,10 +57,10 @@ class SphericCamera : public Camera {
   float ScreenRatio;
 
   void updatePosition() {
-    Position.y = Distance * sin(Phi);
-    Position.z = Distance * cos(Phi) * cos(Theta);
-    Position.x = Distance * cos(Phi) * sin(Theta);
-    Position   = glm::vec4(Position.x, Position.y, Position.z, 1.0f);
+    float x = Distance * cos(Phi) * sin(Theta);
+    float y = Distance * sin(Phi);
+    float z = Distance * cos(Phi) * cos(Theta);
+    Position = LookAt + glm::vec4(x, y, z, 0.0f);
     updateViewVector();
   }
 
@@ -157,14 +160,14 @@ class SphericCamera : public Camera {
   void setDistance(float distance) {
     Distance = distance;
 
-    // Uma câmera look-at nunca pode estar exatamente "em cima" do ponto para
-    // onde ela está olhando, pois isto gera problemas de divisão por zero na
-    // definição do sistema de coordenadas da câmera. Isto é, a variável abaixo
-    // nunca pode ser zero. Versões anteriores deste código possuíam este bug,
-    // o qual foi detectado pelo aluno Vinicius Fraga (2017/2).
     const float verysmallnumber = std::numeric_limits<float>::epsilon();
+    const float maxDistance     = 5.0f;
+
     if (Distance < verysmallnumber)
       Distance = verysmallnumber;
+
+    if (Distance > maxDistance)
+      Distance = maxDistance;
 
     updatePosition();
   }
@@ -182,13 +185,13 @@ class SphericCamera : public Camera {
   }
 
   void MoveForward(float deltaTime) {
-    Position += ViewVector * Speed * deltaTime;
-    setDistance(glm::length(Position - glm::vec4(0.0f, 0.0f, 0.0f, 0.0f)));
+    // Para câmera esférica, não alteramos a distância durante movimento
+    (void) deltaTime;
   }
 
   void MoveBackward(float deltaTime) {
-    Position -= ViewVector * Speed * deltaTime;
-    setDistance(glm::length(Position - glm::vec4(0.0f, 0.0f, 0.0f, 0.0f)));
+    // Para câmera esférica, não alteramos a distância durante movimento
+    (void) deltaTime;
   }
 
   void MoveLeft(float deltaTime) {
@@ -214,6 +217,15 @@ class SphericCamera : public Camera {
     Theta         = atan2(dir.x, dir.z);
 
     updateViewVector();
+  }
+
+  void setLookAt(glm::vec4 lookAt) {
+    LookAt = lookAt;
+    updatePosition();
+  }
+
+  glm::vec4 getViewVector() {
+    return ViewVector;
   }
 };
 
@@ -386,5 +398,13 @@ class FreeCamera : public Camera {
 
   void setUsePerspectiveProjection(bool b) {
     UsePerspectiveProjection = b;
+  }
+
+  void setLookAt(glm::vec4 lookAt) {
+    (void) lookAt;
+  }
+
+  glm::vec4 getViewVector() {
+    return ViewVector;
   }
 };
