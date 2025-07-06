@@ -292,6 +292,13 @@ float g_PlayerRotationY = 0.0f;
 int  g_PlayerLives = 3;
 bool g_GameOver    = false;
 
+// Sistema de vitória
+bool g_PlayerWon = false;
+
+// Posição da vaca
+glm::vec4 g_CowPosition  = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+float     g_CowRotationY = 0.0f;
+
 // Estrutura para representar um inimigo
 struct Enemy {
   glm::vec4 position;
@@ -323,6 +330,9 @@ float lastFrameTime = 0.0f;
 
 // Função para verificar colisão entre jogador e inimigos
 void CheckPlayerEnemyCollisions();
+
+// Função para verificar colisão entre jogador e vaca
+void CheckPlayerCowCollision();
 
 // Função para resetar posição do jogador
 void ResetPlayerPosition();
@@ -443,6 +453,11 @@ int main(int argc, char* argv[]) {
   SceneObject* ghost = &g_VirtualScene["ghost"];
   ghost->transform   = Matrix_Identity() * Matrix_Scale(0.01, 0.01, 0.01);
 
+  ObjModel cowmodel("../../data/cow.obj");
+  ComputeNormals(&cowmodel);
+  BuildTrianglesAndAddToVirtualScene(&cowmodel);
+  SceneObject* cow = &g_VirtualScene["cow"];
+
   // Generate the maze
   MazeGenerator maze(20, 20);
   maze.generateMaze();
@@ -473,6 +488,21 @@ int main(int argc, char* argv[]) {
 
   // Embaralhar as posições para aleatoriedade
   random_shuffle(validPositions.begin(), validPositions.end());
+
+  // Posicionar a vaca em uma posição aleatória válida
+  if (!validPositions.empty()) {
+    // Usar a última posição para a vaca (longe dos inimigos)
+    int cowCellX = validPositions.back().first;
+    int cowCellY = validPositions.back().second;
+    validPositions.pop_back(); // Remover esta posição para não ser usada pelos inimigos
+
+    pair<float, float> cowWorldCoords = g_Maze->cellToWorldCoords(cowCellX, cowCellY);
+    g_CowPosition.x                   = cowWorldCoords.first;
+    g_CowPosition.y                   = 0.0f;
+    g_CowPosition.z                   = cowWorldCoords.second;
+    g_CowPosition.w                   = 1.0f;
+    cow->transform                    = Matrix_Translate(g_CowPosition.x, g_CowPosition.y, g_CowPosition.z);
+  }
 
   // Criar inimigos nas primeiras 8 posições válidas
   int numEnemies = min(8, (int) validPositions.size());
@@ -560,6 +590,7 @@ int main(int argc, char* argv[]) {
 #define MAZE 4
 #define ENEMY_RED 5
 #define ENEMY_BLUE 6
+#define COW 7
 
     float currentFrameTime = glfwGetTime(); // Time in seconds
     deltaTime              = currentFrameTime - lastFrameTime;
@@ -596,8 +627,20 @@ int main(int argc, char* argv[]) {
     glUniform1i(g_object_id_uniform, GHOST);
     DrawVirtualObject("ghost");
 
+    // Desenhar a vaca com rotação lenta
+    g_CowRotationY += 0.5f * deltaTime; // Rotação lenta
+    model = Matrix_Translate(g_CowPosition.x, g_CowPosition.y, g_CowPosition.z) *
+            Matrix_Rotate_Y(g_CowRotationY);
+
+    glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+    glUniform1i(g_object_id_uniform, COW);
+    DrawVirtualObject("cow");
+
     // Verificar colisões entre jogador e inimigos
     CheckPlayerEnemyCollisions();
+
+    // Verificar colisão entre jogador e vaca
+    CheckPlayerCowCollision();
 
     // Atualizar e desenhar todos os inimigos
     for (Enemy& enemy : g_Enemies) {
@@ -785,6 +828,11 @@ int main(int argc, char* argv[]) {
       if (g_GameOver) {
         TextRendering_PrintString(window, "GAME OVER! Pressione R para reiniciar", -0.5f, 0.0f, 2.0f);
       }
+
+      // Mostrar mensagem de vitória se necessário
+      if (g_PlayerWon) {
+        TextRendering_PrintString(window, "VOCE GANHOU! Pressione R para reiniciar", -0.5f, 0.2f, 2.0f);
+      }
     }
 
     glfwSwapBuffers(window);
@@ -897,6 +945,28 @@ void ResetPlayerPosition() {
   RespawnEnemies();
 
   printf("Posição do jogador resetada.\n");
+}
+
+// Função para verificar colisão entre jogador e vaca
+void CheckPlayerCowCollision() {
+  if (g_GameOver || g_PlayerWon)
+    return;
+
+  // Criar esfera do jogador
+  collision::Sphere playerSphere;
+  playerSphere.center = glm::vec3(g_PlayerPosition.x, g_PlayerPosition.y, g_PlayerPosition.z);
+  playerSphere.radius = 0.4f;
+
+  // Criar esfera da vaca
+  collision::Sphere cowSphere;
+  cowSphere.center = glm::vec3(g_CowPosition.x, g_CowPosition.y, g_CowPosition.z);
+  cowSphere.radius = 0.8f; // Raio maior para a vaca
+
+  // Verificar se há colisão
+  if (collision::testSphereSphere(playerSphere, cowSphere)) {
+    g_PlayerWon = true;
+    printf("Jogador ganhou! Tocou na vaca!\n");
+  }
 }
 
 // Função para reposicionar inimigos
@@ -1815,11 +1885,29 @@ void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
       g_ShowInfoText = !g_ShowInfoText;
     }
 
-    // Se o usuário apertar a tecla R e o jogo acabou, reinicia o jogo
-    if (key == GLFW_KEY_R && action == GLFW_PRESS && g_GameOver) {
+    // Se o usuário apertar a tecla R e o jogo acabou ou ganhou, reinicia o jogo
+    if (key == GLFW_KEY_R && action == GLFW_PRESS && (g_GameOver || g_PlayerWon)) {
       g_PlayerLives = 3;
       g_GameOver    = false;
+      g_PlayerWon   = false;
       ResetPlayerPosition();
+
+      // Reposicionar a vaca em uma nova posição aleatória
+      if (g_Maze) {
+        vector<pair<int, int>> validPositions = g_Maze->getValidPositions();
+        if (!validPositions.empty()) {
+          random_shuffle(validPositions.begin(), validPositions.end());
+          int cowCellX = validPositions[0].first;
+          int cowCellY = validPositions[0].second;
+
+          pair<float, float> cowWorldCoords = g_Maze->cellToWorldCoords(cowCellX, cowCellY);
+          g_CowPosition.x                   = cowWorldCoords.first;
+          g_CowPosition.y                   = 0.0f;
+          g_CowPosition.z                   = cowWorldCoords.second;
+          g_CowPosition.w                   = 1.0f;
+        }
+      }
+
       printf("Jogo reiniciado!\n");
     }
 
