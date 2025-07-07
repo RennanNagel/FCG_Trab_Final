@@ -367,7 +367,7 @@ int main(int argc, char* argv[]) {
   // Criamos uma janela do sistema operacional, com 800 colunas e 600 linhas
   // de pixels, e com título "INF01047 ...".
   GLFWwindow* window;
-  window = glfwCreateWindow(WIDTH, HEIGHT, "INF01047 - Lucas Nogueira - 00315453", NULL, NULL);
+  window = glfwCreateWindow(WIDTH, HEIGHT, "INF01047 - Lucas Nogueira - 00315453 e Rennan Nagel - 00297616", NULL, NULL);
   if (!window) {
     glfwTerminate();
     fprintf(stderr, "ERROR: glfwCreateWindow() failed.\n");
