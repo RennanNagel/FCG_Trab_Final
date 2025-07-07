@@ -50,6 +50,10 @@ uniform sampler2D TextureImage3;
 uniform sampler2D TextureImage4;
 uniform sampler2D TextureImage5;
 
+uniform vec4 fog_color;    
+uniform float fog_density; 
+
+
 // O valor de saída ("out") de um Fragment Shader é a cor final do fragmento.
 out vec4 color;
 
@@ -170,12 +174,22 @@ void main()
         Kd0 = texture(TextureImage5, vec2(U, V)).rgb;
     }
 
-    // Equação de Iluminação
+        // Iluminação Phong
     float lambert = max(0,dot(n,l));
     vec4 r = -l + 2*n*dot(n,l);
+    
+    vec3 base_color = Kd0 * I * (lambert + 0.01) + ks*I*pow(max(0,dot(r, v)), q);
+    base_color = pow(base_color, vec3(1.0,1.0,1.0)/2.2); // Gamma correction
+    
+    // === FOG CALCULO ===
+    float distance = length(p.xyz - camera_position.xyz); 
+    float fogFactor = exp(-pow((distance * fog_density), 2.0));
+    fogFactor = clamp(fogFactor, 0.0, 1.0);
+    
+    vec3 final_color = mix(fog_color.rgb, base_color, fogFactor); 
+    
+    color = vec4(final_color, transparency);
 
-    color.rgb = Kd0 * I * (lambert + 0.01) + ks*I*pow(max(0,dot(r, v)), q);
-    color.a = transparency;
-    color.rgb = pow(color.rgb, vec3(1.0,1.0,1.0)/2.2);
+
 } 
 
