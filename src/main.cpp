@@ -31,6 +31,9 @@
 #include <sstream>
 #include <algorithm>
 #include <iostream>
+#include <vector>
+#include <string>
+#include <set>
 
 // Headers das bibliotecas OpenGL
 #include <glad/glad.h>  // Criação de contexto OpenGL 3.3
@@ -40,6 +43,8 @@
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 // Headers da biblioteca para carregar modelos obj
 #include <tiny_obj_loader.h>
@@ -93,6 +98,7 @@ void PopMatrix(glm::mat4& M);
 
 // Função para verificar quais paredes estão entre a câmera e o jogador
 std::vector<std::string> GetWallsBetweenCameraAndPlayer();
+std::vector<std::string> GetWallsInCameraFOV();
 
 // Declaração de várias funções utilizadas em main().  Essas estão definidas
 // logo após a definição de main() neste arquivo.
@@ -251,6 +257,9 @@ GLint g_ks_uniform;
 GLint g_q_uniform;
 GLint g_displacement_uniform;
 GLint g_transparency_uniform;
+
+GLint g_fog_color_uniform;
+GLint g_fog_density_uniform;
 
 // Armazena as paredes que estão entre a câmera e o jogador
 std::vector<std::string> g_WallsBetweenCameraAndPlayer;
@@ -435,18 +444,6 @@ int main(int argc, char* argv[]) {
   planeobj->bbox_min    = glm::vec3(planeobj->transform * glm::vec4(planeobj->bbox_min, 1.0f));
   planeobj->bbox_max    = glm::vec3(planeobj->transform * glm::vec4(planeobj->bbox_max, 1.0f));
 
-  // ObjModel maze("../../data/maze.obj");
-  // ComputeNormals(&maze);
-  // BuildTrianglesAndAddToVirtualScene(&maze);
-
-  // ObjModel wall("../../data/cube.obj");
-  // ComputeNormals(&wall);
-  // BuildTrianglesAndAddToVirtualScene(&wall);
-  // SceneObject* wallobj = &g_VirtualScene["cube"];
-  // wallobj->transform   = Matrix_Identity() * Matrix_Translate(10.0f, 0.0f, 0.0f) * Matrix_Scale(1.0f, 1.0f, 1.0f);
-  // wallobj->bbox_min    = glm::vec3(wallobj->transform * glm::vec4(wallobj->bbox_min, 1.0f));
-  // wallobj->bbox_max    = glm::vec3(wallobj->transform * glm::vec4(wallobj->bbox_max, 1.0f));
-
   ObjModel ghostmodel("../../data/pacman_ghost.obj");
   ComputeNormals(&ghostmodel);
   BuildTrianglesAndAddToVirtualScene(&ghostmodel);
@@ -583,6 +580,9 @@ int main(int argc, char* argv[]) {
     glUniformMatrix4fv(g_view_uniform, 1, GL_FALSE, glm::value_ptr(view));
     glUniformMatrix4fv(g_projection_uniform, 1, GL_FALSE, glm::value_ptr(projection));
 
+    glUniform4f(g_fog_color_uniform, 0.9f, 0.9f, 1.0f, 1.0f); // cor azul-clara de fundo
+    glUniform1f(g_fog_density_uniform, 0.15f);    
+
 #define SPHERE 0
 #define BUNNY 1
 #define PLANE 2
@@ -597,19 +597,6 @@ int main(int argc, char* argv[]) {
     lastFrameTime          = currentFrameTime;
 
     glm::mat4 model = Matrix_Identity();
-
-    // Desenhamos o modelo do coelho
-    // model = Matrix_Translate(1.1f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + currentFrameTime * 0.1f);
-    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    // glUniform1i(g_object_id_uniform, BUNNY);
-    // DrawVirtualObject("the_bunny");
-
-    // Desenhamos o modelo da vaca
-    // model = Matrix_Translate(1.1f, 0.0f, 0.0f) * Matrix_Rotate_X(g_AngleX + currentFrameTime * 0.1f);
-    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    // glUniform1i(g_object_id_uniform, BUNNY);
-    // DrawVirtualObject("cow");
-
 
     // Desenhamos o plano do chão
     model = g_VirtualScene["the_plane"].transform;
@@ -761,20 +748,6 @@ int main(int argc, char* argv[]) {
       DrawVirtualObject("ghost");
     }
 
-    // model = Matrix_Translate(0.0f, -1.1f, 0.0f);
-    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    // glUniform1i(g_object_id_uniform, MAZE);
-    // glUniform1i(g_displacement_uniform, 20.0f);
-    // DrawVirtualObject("maze");
-
-    // model = g_VirtualScene["cube"].transform;
-    // glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    // glUniform1i(g_object_id_uniform, PLANE);
-    // DrawVirtualObject("cube");
-
-    // Atualizar a lista de paredes entre a câmera e o jogador
-    g_WallsBetweenCameraAndPlayer = GetWallsBetweenCameraAndPlayer();
-
     // Primeiro, desenhar todas as paredes opacas
     for (const std::string& wallName : wallNames) {
       // Verificar se esta parede está entre a câmera e o jogador
@@ -792,24 +765,25 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    // Depois, desenhar todas as paredes transparentes
-    glDepthMask(GL_FALSE); // Desabilitar escrita no depth buffer para transparentes
-    for (const std::string& wallName : wallNames) {
-      // Verificar se esta parede está entre a câmera e o jogador
-      bool isWallBetween = std::find(g_WallsBetweenCameraAndPlayer.begin(),
-                                     g_WallsBetweenCameraAndPlayer.end(),
-                                     wallName) != g_WallsBetweenCameraAndPlayer.end();
 
-      // Renderizar apenas paredes transparentes nesta passada
-      if (isWallBetween) {
-        model = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f);
-        glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-        glUniform1i(g_object_id_uniform, MAZE);
-        glUniform1f(g_transparency_uniform, 0.5f);
-        DrawVirtualObject(wallName.c_str());
-      }
+    // Atualizar a lista de paredes entre a câmera e o jogador
+    g_WallsBetweenCameraAndPlayer = GetWallsBetweenCameraAndPlayer();
+    // g_WallsBetweenCameraAndPlayer = GetWallsInCameraFOV();
+
+    // Depois, desenhar todas as paredes transparentes
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    for (const std::string& wallName : g_WallsBetweenCameraAndPlayer) {
+      if (camera != &sphericCamera)
+        continue;
+
+      model = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f);
+      glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+      glUniform1i(g_object_id_uniform, MAZE);
+      glUniform1f(g_transparency_uniform, 0.5f);
+      DrawVirtualObject(wallName.c_str());
     }
-    glDepthMask(GL_TRUE); // Reabilitar escrita no depth buffer
 
     // Restaurar transparência padrão para outros objetos
     glUniform1f(g_transparency_uniform, 1.0f);
@@ -850,19 +824,61 @@ int main(int argc, char* argv[]) {
   return 0;
 }
 
+
+// Função para verificar quais paredes estão dentro do FOV da câmera
+std::vector<std::string> GetWallsInCameraFOV() {
+  std::vector<std::string> wallsInFOV;
+  std::set<std::string>    wallsHit; // Evitar duplicatas
+
+  glm::vec3 cameraPos = glm::vec3(camera->getPosition());
+  glm::vec3 forward   = glm::vec3(camera->getViewVector());
+  glm::vec3 up        = glm::vec3(camera->getUpVector());
+
+  float fov     = glm::radians(60.0f); // 60 graus
+  int   numRays = 20;
+  float halfFOV = fov / 2.0f;
+
+  for (int i = 0; i < numRays; ++i) {
+    float lerpFactor = static_cast<float>(i) / static_cast<float>(numRays - 1);
+    float angle      = -halfFOV + lerpFactor * fov;
+
+    glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), angle, up);
+    glm::vec3 rayDir   = glm::normalize(glm::vec3(rotation * glm::vec4(forward, 0.0f)));
+
+    collision::Line ray;
+    ray.start = cameraPos;
+    ray.end   = cameraPos + rayDir * 100.0f; // Distância arbitrária
+
+    for (auto it = g_VirtualScene.begin(); it != g_VirtualScene.end(); ++it) {
+      const std::string& name = it->first;
+      const SceneObject& obj  = it->second;
+
+      if (name.find("wall_") != 0)
+        continue;
+
+      collision::AABB objAABB;
+      objAABB.min = glm::vec3(obj.transform * glm::vec4(obj.bbox_min, 1.0f));
+      objAABB.max = glm::vec3(obj.transform * glm::vec4(obj.bbox_max, 1.0f));
+
+      if (collision::testAABBLine(objAABB, ray)) {
+        if (wallsHit.find(name) == wallsHit.end()) {
+          wallsHit.insert(name);
+          wallsInFOV.push_back(name);
+        }
+      }
+    }
+  }
+
+  return wallsInFOV;
+}
+
+
 // Função para verificar quais paredes estão entre a câmera e o jogador
 std::vector<std::string> GetWallsBetweenCameraAndPlayer() {
   std::vector<std::string> wallsBetween;
 
-  glm::vec3 cameraPos = glm::vec3(camera->getPosition().x, camera->getPosition().y, camera->getPosition().z);
-  glm::vec3 playerPos = glm::vec3(g_PlayerPosition.x, g_PlayerPosition.y, g_PlayerPosition.z);
-
-  // Direção principal da câmera para o jogador
-  glm::vec3 mainDirection = glm::normalize(playerPos - cameraPos);
-
   // Obter o FOV da câmera (assumindo que está em radianos)
-  float fov     = 3.141592f / 3.0f; // Campo de visão da câmera
-  float halfFov = fov * 0.5f;
+  float fov = 3.141592f / 3.0f; // Campo de visão da câmera
 
   // Verificar cada parede
   for (const auto& pair : g_VirtualScene) {
@@ -880,8 +896,8 @@ std::vector<std::string> GetWallsBetweenCameraAndPlayer() {
 
     // Criar um raio da câmera para o centro da parede para verificar se há obstrução
     collision::Line ray;
-    ray.start     = glm::vec3(camera->getPosition());
-    ray.direction = glm::vec3(camera->getViewVector());
+    ray.start = glm::vec3(camera->getPosition());
+    ray.end   = glm::vec3(g_PlayerPosition);
 
     // Se está no FOV, entre a câmera e o jogador, e o raio intersecta a parede
     if (collision::testAABBLine(objAABB, ray)) {
@@ -965,7 +981,7 @@ void CheckPlayerCowCollision() {
   // Verificar se há colisão
   if (collision::testSphereSphere(playerSphere, cowSphere)) {
     g_PlayerWon = true;
-    printf("Jogador ganhou! Tocou na vaca!\n");
+    printf("Jogador ganhou!\n");
   }
 }
 
@@ -1162,6 +1178,9 @@ void LoadShadersFromFiles() {
   g_q_uniform            = glGetUniformLocation(g_GpuProgramID, "q");
   g_displacement_uniform = glGetUniformLocation(g_GpuProgramID, "displacementScale");
   g_transparency_uniform = glGetUniformLocation(g_GpuProgramID, "transparency");
+
+  g_fog_color_uniform   = glGetUniformLocation(g_GpuProgramID, "fog_color");
+  g_fog_density_uniform = glGetUniformLocation(g_GpuProgramID, "fog_density");
 
 
   // Variáveis em "shader_fragment.glsl" para acesso das imagens de textura
