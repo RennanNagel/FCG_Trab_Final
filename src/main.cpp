@@ -766,27 +766,27 @@ int main(int argc, char* argv[]) {
     }
 
 
-    // Atualizar a lista de paredes entre a câmera e o jogador
-    g_WallsBetweenCameraAndPlayer = GetWallsBetweenCameraAndPlayer();
-    // g_WallsBetweenCameraAndPlayer = GetWallsInCameraFOV();
+    if (camera == &sphericCamera) {
+      // Atualizar a lista de paredes entre a câmera e o jogador
+      g_WallsBetweenCameraAndPlayer = GetWallsBetweenCameraAndPlayer();
+      // g_WallsBetweenCameraAndPlayer = GetWallsInCameraFOV();
 
-    // Depois, desenhar todas as paredes transparentes
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      // Depois, desenhar todas as paredes transparentes
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    for (const std::string& wallName : g_WallsBetweenCameraAndPlayer) {
-      if (camera != &sphericCamera)
-        continue;
+      for (const std::string& wallName : g_WallsBetweenCameraAndPlayer) {
+        model = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f);
+        glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+        glUniform1i(g_object_id_uniform, MAZE);
+        glUniform1f(g_transparency_uniform, 0.5f);
+        DrawVirtualObject(wallName.c_str());
+      }
 
-      model = Matrix_Identity() * Matrix_Translate(0.0f, -1.1f, 0.0f);
-      glUniformMatrix4fv(g_model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-      glUniform1i(g_object_id_uniform, MAZE);
-      glUniform1f(g_transparency_uniform, 0.5f);
-      DrawVirtualObject(wallName.c_str());
+      // Restaurar transparência padrão para outros objetos
+      glUniform1f(g_transparency_uniform, 1.0f);
     }
 
-    // Restaurar transparência padrão para outros objetos
-    glUniform1f(g_transparency_uniform, 1.0f);
 
     // Renderizar informações do jogo (vidas, game over)
     if (g_ShowInfoText) {
