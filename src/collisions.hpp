@@ -23,7 +23,10 @@ struct Sphere {
 
 struct Line {
   glm::vec3 start;
-  glm::vec3 direction;
+  glm::vec3 end;
+  glm::vec3 direction() const {
+    return end - start;
+  }
 };
 
 // Função para testar colisão entre AABB e plano
@@ -101,33 +104,32 @@ bool testAABBAABB(const AABB& aabb1, const AABB& aabb2) {
 
 // Função para testar colisão entre AABB e linha
 bool testAABBLine(const AABB& aabb, const Line& line) {
-  glm::vec3 directionInv;
+  glm::vec3 dir = line.direction();
+  glm::vec3 dirInv;
 
-  // Calcular inversos da direção (evitando divisão por zero)
-  directionInv.x = line.direction.x != 0 ? 1.0f / line.direction.x : std::numeric_limits<float>::max();
-  directionInv.y = line.direction.y != 0 ? 1.0f / line.direction.y : std::numeric_limits<float>::max();
-  directionInv.z = line.direction.z != 0 ? 1.0f / line.direction.z : std::numeric_limits<float>::max();
+  // Avoid division by zero
+  dirInv.x = dir.x != 0 ? 1.0f / dir.x : std::numeric_limits<float>::infinity();
+  dirInv.y = dir.y != 0 ? 1.0f / dir.y : std::numeric_limits<float>::infinity();
+  dirInv.z = dir.z != 0 ? 1.0f / dir.z : std::numeric_limits<float>::infinity();
 
-  // Calcular t para cada plano da AABB
-  float t1 = (aabb.min.x - line.start.x) * directionInv.x;
-  float t2 = (aabb.max.x - line.start.x) * directionInv.x;
-  float t3 = (aabb.min.y - line.start.y) * directionInv.y;
-  float t4 = (aabb.max.y - line.start.y) * directionInv.y;
-  float t5 = (aabb.min.z - line.start.z) * directionInv.z;
-  float t6 = (aabb.max.z - line.start.z) * directionInv.z;
+  float t1 = (aabb.min.x - line.start.x) * dirInv.x;
+  float t2 = (aabb.max.x - line.start.x) * dirInv.x;
+  float t3 = (aabb.min.y - line.start.y) * dirInv.y;
+  float t4 = (aabb.max.y - line.start.y) * dirInv.y;
+  float t5 = (aabb.min.z - line.start.z) * dirInv.z;
+  float t6 = (aabb.max.z - line.start.z) * dirInv.z;
 
-  // Encontrar os valores máximos e mínimos de t
   float tmin = std::max(std::max(std::min(t1, t2), std::min(t3, t4)), std::min(t5, t6));
   float tmax = std::min(std::min(std::max(t1, t2), std::max(t3, t4)), std::max(t5, t6));
 
-  // Se tmax < 0, a linha está completamente atrás da AABB
-  // Se tmin > tmax, a linha não intersecta a AABB
-  // Se tmin > 1, a linha está completamente além do comprimento do segmento
-  if (tmax < 0 || tmin > tmax || tmin > 1.0f) {
+  // If no overlap or segment entirely before/after the AABB
+  if (tmax < 0 || tmin > tmax || tmin > 1.0f || tmax < 0.0f || tmin < 0.0f && tmax < 0.0f)
     return false;
-  }
 
-  // A linha intersecta a AABB
+  // Clamp to the segment (0 <= t <= 1)
+  if (tmax < 0.0f || tmin > 1.0f)
+    return false;
+
   return true;
 }
 

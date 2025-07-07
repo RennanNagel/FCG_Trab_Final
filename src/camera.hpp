@@ -33,6 +33,8 @@ class Camera {
   virtual void      MoveDownwards(float deltaTime)      = 0;
   virtual void      setLookAt(glm::vec4 lookAt)         = 0;
   virtual glm::vec4 getViewVector()                     = 0;
+  virtual glm::vec4 getUpVector()                       = 0;
+
 
   private:
   float Radius;
@@ -57,9 +59,9 @@ class SphericCamera : public Camera {
   float ScreenRatio;
 
   void updatePosition() {
-    float x = Distance * cos(Phi) * sin(Theta);
-    float y = Distance * sin(Phi);
-    float z = Distance * cos(Phi) * cos(Theta);
+    float x  = Distance * cos(Phi) * sin(Theta);
+    float y  = Distance * sin(Phi);
+    float z  = Distance * cos(Phi) * cos(Theta);
     Position = LookAt + glm::vec4(x, y, z, 0.0f);
     updateViewVector();
   }
@@ -226,6 +228,10 @@ class SphericCamera : public Camera {
 
   glm::vec4 getViewVector() {
     return ViewVector;
+  }
+
+  glm::vec4 getUpVector() {
+    return UpVector;
   }
 };
 
@@ -406,5 +412,9 @@ class FreeCamera : public Camera {
 
   glm::vec4 getViewVector() {
     return ViewVector;
+  }
+
+  glm::vec4 getUpVector() {
+    return UpVector;
   }
 };
