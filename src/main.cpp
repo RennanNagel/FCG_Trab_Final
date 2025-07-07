@@ -252,6 +252,9 @@ GLint g_q_uniform;
 GLint g_displacement_uniform;
 GLint g_transparency_uniform;
 
+GLint g_fog_color_uniform;
+GLint g_fog_density_uniform;
+
 // Armazena as paredes que estão entre a câmera e o jogador
 std::vector<std::string> g_WallsBetweenCameraAndPlayer;
 
@@ -582,6 +585,9 @@ int main(int argc, char* argv[]) {
     glm::mat4 projection = camera->getMatrixProjection();
     glUniformMatrix4fv(g_view_uniform, 1, GL_FALSE, glm::value_ptr(view));
     glUniformMatrix4fv(g_projection_uniform, 1, GL_FALSE, glm::value_ptr(projection));
+
+    glUniform4f(g_fog_color_uniform, 0.9f, 0.9f, 1.0f, 1.0f); // cor azul-clara de fundo
+    glUniform1f(g_fog_density_uniform, 0.15f);    
 
 #define SPHERE 0
 #define BUNNY 1
@@ -1162,6 +1168,9 @@ void LoadShadersFromFiles() {
   g_q_uniform            = glGetUniformLocation(g_GpuProgramID, "q");
   g_displacement_uniform = glGetUniformLocation(g_GpuProgramID, "displacementScale");
   g_transparency_uniform = glGetUniformLocation(g_GpuProgramID, "transparency");
+
+  g_fog_color_uniform   = glGetUniformLocation(g_GpuProgramID, "fog_color");
+  g_fog_density_uniform = glGetUniformLocation(g_GpuProgramID, "fog_density");
 
 
   // Variáveis em "shader_fragment.glsl" para acesso das imagens de textura
