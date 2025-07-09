@@ -264,6 +264,25 @@ GLint g_fog_density_uniform;
 // Armazena as paredes que estão entre a câmera e o jogador
 std::vector<std::string> g_WallsBetweenCameraAndPlayer;
 
+bool   camTransitionActive      = false;
+float  camTransitionStartTime   = 0.0f;
+float  camTransitionDuration    = 1.0f; // duração em segundos
+glm::vec3 camP0, camP1, camP2, camP3;
+glm::vec3 lookP0, lookP1, lookP2, lookP3;
+
+glm::vec3 bezier3(const glm::vec3& p0,
+  const glm::vec3& p1,
+  const glm::vec3& p2,
+  const glm::vec3& p3,
+  float t)
+{
+float u = 1.0f - t;
+return u*u*u*p0
++ 3*u*u*t*p1
++ 3*u*t*t*p2
++ t*t*t*p3;
+}
+
 // Camera
 SphericCamera sphericCamera(5.0f,
                             g_CameraTheta,
@@ -287,6 +306,16 @@ FreeCamera freeCamera(5.0f,
                       3.141592 / 3.0f,
                       (float) WIDTH / HEIGHT,
                       true);
+
+FreeCamera transitionalCam(
+                        5.0f, 0, 0,
+                        glm::vec4(0),      // pos inicial será sobrescrita
+                        glm::vec4(0,1,0,0),// up vector
+                        -0.01f, -1000.0f,
+                        3.141592f/3.0f,
+                        (float)WIDTH/HEIGHT,
+                        true
+                    );
 
 Camera* camera = &sphericCamera;
 
@@ -460,6 +489,13 @@ int main(int argc, char* argv[]) {
   maze.generateMaze();
   g_Maze = &maze; // Armazenar referência global
 
+  {
+    // Usa célula central (10,10) num labirinto 20×20 (cellSize = 2.0)
+    auto [cx, cz] = maze.cellToWorldCoords(10, 10);
+    freeCamera.setPosition(glm::vec4(cx, 20.0f, cz, 1.0f));
+    freeCamera.setLookAt  (glm::vec4(cx,  0.0f, cz, 1.0f));
+  }
+
   // Export each wall into a separate ObjModel
   auto mazeWalls = maze.exportToObjModels();
 
@@ -575,13 +611,40 @@ int main(int argc, char* argv[]) {
     // Definir transparência padrão (opaco)
     glUniform1f(g_transparency_uniform, 1.0f);
 
-    glm::mat4 view       = camera->getMatrixView();
-    glm::mat4 projection = camera->getMatrixProjection();
-    glUniformMatrix4fv(g_view_uniform, 1, GL_FALSE, glm::value_ptr(view));
+    // Calcular view/projection com transição suave
+    glm::mat4 view, projection;
+    float currentTime = glfwGetTime();
+    if (camTransitionActive) {
+        float t = (currentTime - camTransitionStartTime) / camTransitionDuration;
+        if (t < 1.0f) {
+            glm::vec3 pos  = bezier3(camP0, camP1, camP2, camP3, t);
+            glm::vec3 look = bezier3(lookP0, lookP1, lookP2, lookP3, t);
+            transitionalCam.setPosition(glm::vec4(pos, 1.0f));
+            transitionalCam.setLookAt(   glm::vec4(look,1.0f));
+            view       = transitionalCam.getMatrixView();
+            projection = transitionalCam.getMatrixProjection();
+        } else {
+            camTransitionActive = false;
+            camera = (camera == &sphericCamera) ? (Camera*)&freeCamera : (Camera*)&sphericCamera;
+            view       = camera->getMatrixView();
+            projection = camera->getMatrixProjection();
+        }
+    } else {
+        view       = camera->getMatrixView();
+        projection = camera->getMatrixProjection();
+    }
+
+    glUniformMatrix4fv(g_view_uniform,       1, GL_FALSE, glm::value_ptr(view));
     glUniformMatrix4fv(g_projection_uniform, 1, GL_FALSE, glm::value_ptr(projection));
 
-    glUniform4f(g_fog_color_uniform, 0.9f, 0.9f, 1.0f, 1.0f); // cor azul-clara de fundo
-    glUniform1f(g_fog_density_uniform, 0.15f);    
+    glUniform4f(g_fog_color_uniform, 0.9f, 0.9f, 1.0f, 1.0f);
+    if (camera == &freeCamera) {
+        // Desativa o fog quando estamos na câmera superior
+        glUniform1f(g_fog_density_uniform, 0.0f);
+    } else {
+        // Mantém densidade normal de fog na câmera esférica
+        glUniform1f(g_fog_density_uniform, 0.15f);
+    }
 
 #define SPHERE 0
 #define BUNNY 1
@@ -593,6 +656,28 @@ int main(int argc, char* argv[]) {
 #define COW 7
 
     float currentFrameTime = glfwGetTime(); // Time in seconds
+    if (camTransitionActive) {
+      float t = (currentFrameTime - camTransitionStartTime) / camTransitionDuration;
+        if (camTransitionActive && t < 1.0f) {
+            glm::vec3 pos  = bezier3(camP0, camP1, camP2, camP3, t);
+            glm::vec3 look = bezier3(lookP0, lookP1, lookP2, lookP3, t);
+        
+            transitionalCam.setPosition(glm::vec4(pos,  1.0f));
+            transitionalCam.setLookAt(   glm::vec4(look, 1.0f));
+        
+            view       = transitionalCam.getMatrixView();
+            projection = transitionalCam.getMatrixProjection();
+        } else if (camTransitionActive) {
+            // fim da transição: troca definitiva
+            camTransitionActive = false;
+            camera = (camera == &sphericCamera)
+                   ? (Camera*)&freeCamera
+                   : (Camera*)&sphericCamera;
+        }
+    } else {
+      view       = camera->getMatrixView();
+      projection = camera->getMatrixProjection();
+    }
     deltaTime              = currentFrameTime - lastFrameTime;
     lastFrameTime          = currentFrameTime;
 
@@ -1881,10 +1966,26 @@ void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     keys[key].isPressed = true;
 
     if (key == GLFW_KEY_C && action == GLFW_PRESS) {
-      float screenRatio = camera->getScreenRatio();
-      camera            = (camera == &freeCamera) ? (Camera*) &sphericCamera : (Camera*) &freeCamera;
-      camera->setScreenRatio(screenRatio);
-    }
+      camTransitionStartTime = (float)glfwGetTime();
+      camTransitionActive    = true;
+  
+      // pega só xyz
+      camP0  = glm::vec3(camera->getPosition());
+      lookP0 = glm::vec3(camera->getPosition() + camera->getViewVector());
+  
+      Camera* targetCam = (camera == &sphericCamera)
+                        ? (Camera*)&freeCamera
+                        : (Camera*)&sphericCamera;
+      camP3  = glm::vec3(targetCam->getPosition());
+      lookP3 = glm::vec3(targetCam->getPosition() + targetCam->getViewVector());
+  
+      // controles “para cima” + avanço de 25% e 75%
+      camP1  = camP0  + glm::vec3(0,2,0) + 0.25f*(camP3  - camP0);
+      camP2  = camP0  + glm::vec3(0,2,0) + 0.75f*(camP3  - camP0);
+      lookP1 = lookP0 + glm::vec3(0,2,0) + 0.25f*(lookP3 - lookP0);
+      lookP2 = lookP0 + glm::vec3(0,2,0) + 0.75f*(lookP3 - lookP0);
+  }
+  
 
     if (key == GLFW_KEY_Q && action == GLFW_PRESS)
       glfwSetWindowShouldClose(window, GL_TRUE);
