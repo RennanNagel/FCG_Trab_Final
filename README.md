@@ -32,14 +32,14 @@ ChatGPT foi utilizado **apenas para sanar dúvidas** pontuais, relacionadas à:
 ## 🧱 Recursos Implementados
 
 - **Malhas poligonais complexas:** Utilizadas em diferentes objetos do cenário.
-- **Transformações geométricas:** Aplicadas para movimentação da vaquinha sobre o plano.
+- **Transformações geométricas:** Aplicadas para movimentação do jogador sobre o plano.
 - **Câmeras:**
-  - **Câmera livre:** Para visualização geral do plano.
-  - **Câmera look-at:** Para acompanhar a orientação da vaquinha.
-- **Instâncias de objetos:** Objetos como *Apple* e *GrassFood* são reutilizados com a mesma malha.
-- **Mapeamento de texturas:** Todos os objetos e o cenário têm cores definidas por texturas baseadas em imagens.
-- **Curvas de Bézier:** Bézier cúbica utilizada para animar o movimento do passarinho.
-- **Animações baseadas no tempo:** Todos os movimentos do jogo (câmeras, vaquinha, bezerrinho, comidas, passarinho) são animados com base no tempo.
+  - **Câmera livre:** Para visualização geral do labirinto.
+  - **Câmera look-at:** Para acompanhar a orientação do jogador.
+- **Instâncias de objetos:** Objetos como *Ghost* e *Maze* são reutilizados com a mesma malha.
+- **Mapeamento de texturas:** Todos os fantasmas, paredes e a vaca tem suas texturas mapeadas para eles.
+- **Curvas de Bézier:** Bézier cúbica utilizada para animar o movimento da transição entre câmeras.
+- **Animações baseadas no tempo:** Todos os movimentos do jogo (câmeras, jogador, vaca, inimigos, transição de câmeras) são animados com base no tempo.
 
 ---
 
